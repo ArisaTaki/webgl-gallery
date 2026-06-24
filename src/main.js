@@ -1,0 +1,3604 @@
+import * as THREE from 'three';
+import './styles.css';
+
+const canvas = document.querySelector('#webgl');
+const app = document.querySelector('#app');
+const WEBGL_DPR = 1.5;
+const PAGINATION_DPR = 2;
+const BASE_SURFACE_RGB = [20, 20, 20];
+const BASE_TEXT_RGB = [186, 196, 184];
+const BASE_WORK_RGB = [214, 216, 210];
+const REFERENCE_PROJECT_COLORS = [
+  { bg: [255, 255, 255], text: [204, 153, 51], work: [240, 240, 240] },
+  { bg: [190, 190, 190], text: [30, 30, 30], work: [168, 168, 168] },
+  { bg: [222, 76, 63], text: [255, 241, 206], work: [203, 69, 57] },
+  { bg: [231, 230, 227], text: [30, 30, 30], work: [214, 213, 210] },
+  { bg: [10, 10, 10], text: [217, 217, 217], work: [23, 23, 23] },
+  { bg: [213, 213, 213], text: [42, 42, 42], work: [189, 189, 189] },
+  { bg: [8, 9, 17], text: [240, 240, 240], work: [1, 1, 3] },
+  { bg: [89, 94, 99], text: [217, 146, 153], work: [76, 81, 86] },
+  { bg: [137, 130, 112], text: [224, 200, 164], work: [119, 113, 97] },
+  { bg: [12, 12, 12], text: [218, 69, 47], work: [15, 11, 8] },
+  { bg: [133, 129, 125], text: [246, 240, 226], work: [116, 112, 108] },
+  { bg: [254, 248, 246], text: [189, 153, 143], work: [251, 240, 236] },
+  { bg: [29, 28, 34], text: [254, 168, 177], work: [19, 18, 24] },
+  { bg: [245, 239, 223], text: [7, 7, 7], work: [227, 220, 204] },
+  { bg: [223, 233, 243], text: [28, 33, 52], work: [208, 218, 228] },
+  { bg: [237, 232, 222], text: [85, 114, 156], work: [222, 217, 207] },
+  { bg: [34, 34, 35], text: [233, 120, 106], work: [21, 21, 21] },
+  { bg: [219, 230, 226], text: [0, 168, 169], work: [203, 215, 211] },
+  { bg: [211, 208, 199], text: [83, 187, 137], work: [196, 193, 184] },
+  { bg: [185, 158, 148], text: [30, 31, 40], work: [159, 132, 123] },
+  { bg: [224, 231, 239], text: [174, 117, 230], work: [208, 215, 223] },
+  { bg: [69, 69, 69], text: [240, 67, 51], work: [55, 55, 55] },
+  { bg: [119, 131, 121], text: [227, 203, 181], work: [103, 113, 105] },
+  { bg: [236, 220, 233], text: [50, 29, 68], work: [221, 205, 218] },
+  { bg: [223, 224, 228], text: [199, 131, 108], work: [208, 209, 215] },
+  { bg: [139, 163, 167], text: [232, 231, 200], work: [127, 149, 153] },
+  { bg: [50, 68, 127], text: [210, 220, 242], work: [41, 56, 106] },
+  { bg: [233, 241, 244], text: [255, 113, 203], work: [215, 224, 227] },
+  { bg: [81, 84, 67], text: [212, 195, 165], work: [70, 73, 58] },
+  { bg: [173, 173, 171], text: [115, 65, 48], work: [155, 155, 153] },
+];
+const EMPTY_MEDIA_SRC = 'data:,';
+const WORK_DOM_LERP = 0.08;
+const WORK_ENTRY_LERP = 0.09;
+const WORK_ENTRY_REVEAL_DELAY = 100;
+const WORK_SWITCH_LAYER_LERP = 0.077;
+const WORK_SWITCH_FRAME_LERP = 0.13;
+const WORK_SWITCH_REVEAL_DELAY = 220;
+const DETAIL_SWITCH_EARLY_SCROLL_EASE = 0.0495;
+const DETAIL_SWITCH_EARLY_PLANE_EASE = 0.0495;
+const DETAIL_EXIT_EARLY_PLANE_EASE = 0.058;
+const HOME_PAGINATION_BASE_OPACITY = 0.2;
+const HOME_WHEEL_LINE_FACTOR = 0.75;
+const HOME_WHEEL_PIXEL_FACTOR = 0.543;
+
+const VIEW = {
+  about: 'about',
+  detail: 'detail',
+  index: 'index',
+  loading: 'loading',
+  studio: 'studio',
+  work: 'work',
+};
+
+const state = {
+  activeIndex: 0,
+  aboutReturnMode: VIEW.index,
+  curveLatency: 0,
+  detailEntryStartedAt: 0,
+  detailExitStartedAt: 0,
+  detailMix: 0,
+  dragMoved: 0,
+  dragOriginScroll: 0,
+  dragOriginX: 0,
+  dragPreviousX: 0,
+  dragStart: 0,
+  dragging: false,
+  exitingProjectIndex: -1,
+  exitingWorkIndex: -1,
+  hoverIndex: -1,
+  homeMotionActiveUntil: 0,
+  keyBuffer: '',
+  homeIntro: 0,
+  initialRouteMode: null,
+  loaderLoaded: 0,
+  loaderStartedAt: performance.now(),
+  loaderTotal: 1,
+  loaderValue: 1,
+  loaderReady: false,
+  mode: getInitialMode(),
+  motionLagPx: 0,
+  paginationHeight: 0,
+  paginationDigitDirection: 1,
+  paginationDigitFromIndex: -1,
+  paginationDigitOut: false,
+  paginationDigitShowOut: false,
+  paginationDigitStartedAt: 0,
+  paginationDigitToIndex: 0,
+  paginationHoverIndex: -1,
+  paginationLeft: [],
+  paginationOpen: 0,
+  paginationOpacity: [],
+  paginationTop: 49,
+  paginationWidth: [],
+  pointerActive: false,
+  projectSwitchStartedAt: 0,
+  photos: [],
+  ready: false,
+  rotateLatency: 0,
+  scroll: 0,
+  scrollLagPx: 0,
+  scrollLatencyPx: Number.NaN,
+  switchDirection: 1,
+  switchPulse: 0,
+  surfaceRgb: BASE_SURFACE_RGB.slice(),
+  surfaceRgbTarget: BASE_SURFACE_RGB.slice(),
+  targetScroll: 0,
+  textRgb: BASE_TEXT_RGB.slice(),
+  textRgbTarget: BASE_TEXT_RGB.slice(),
+  transition: 1,
+  velocity: 0,
+  railActiveY: 0,
+  railActiveLerp: 0.08,
+  railOffset: 0,
+  railMotionReady: false,
+  railTargetActiveY: 0,
+  railTargetOffset: 0,
+  workLayerMotion: [],
+  workMotionActive: false,
+  workThumbMotion: [],
+  workThumbMotionActive: false,
+  workIndex: 0,
+  workBgFadeAt: 0,
+  workBgMotionActive: false,
+  workBgOpacity: 0,
+  workBgTargetOpacity: 0,
+  workRgb: BASE_WORK_RGB.slice(),
+  workRgbTarget: BASE_WORK_RGB.slice(),
+  workMix: 0,
+};
+
+const renderer = new THREE.WebGLRenderer({
+  alpha: true,
+  antialias: true,
+  canvas,
+  powerPreference: 'high-performance',
+});
+renderer.setClearColor(0x111111, 0);
+renderer.setPixelRatio(WEBGL_DPR);
+
+const scene = new THREE.Scene();
+const CAMERA_FOV = 45;
+const camera = new THREE.PerspectiveCamera(CAMERA_FOV, window.innerWidth / window.innerHeight, 0.1, 10);
+camera.position.z = 1 / Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV) / 2);
+
+const clock = new THREE.Clock();
+const loader = new THREE.TextureLoader();
+const rendererClearColor = new THREE.Color(0x141414);
+const pointer = new THREE.Vector2(0.5, 0.5);
+const planes = [];
+let backgroundPlane = null;
+const emptyTexture = new THREE.DataTexture(new Uint8Array([16, 16, 15, 255]), 1, 1);
+emptyTexture.colorSpace = THREE.SRGBColorSpace;
+emptyTexture.needsUpdate = true;
+const workImageDecodeCache = new Map();
+
+let viewport = { width: 2, height: 2, aspect: 1 };
+let galleryEls = {};
+let paginationCtx = null;
+let projectSwitchTimer = 0;
+let titleModeTimer = 0;
+let transitionTimer = 0;
+let workMediaTimer = 0;
+let workEntryTimer = 0;
+let workFxResetRaf = 0;
+let titleLayoutRaf = 0;
+let frameDelta = 1;
+
+const TITLE_LAYOUT = {
+  home: [
+    [2, 12, 21, 31, 49, 62, 75, 88],
+    [13, 29, 45, 61, 76, 90],
+  ],
+  homeByLength: {
+    3: [
+      [10, 39, 70],
+      [10, 39, 70],
+    ],
+    4: [
+      [2, 12, 22, 32],
+      [2, 12, 22, 32],
+    ],
+    5: [
+      [12, 28, 45, 62, 78],
+      [12, 28, 53, 63, 81],
+    ],
+    7: [
+      [0, 10, 18, 26, 35, 60, 75],
+      [8, 22, 36, 50, 66, 82, 92],
+    ],
+    8: [
+      [2, 12, 21, 31, 49, 62, 75, 88],
+      [4, 15, 27, 39, 54, 68, 80, 92],
+    ],
+  },
+  workLetterSpacing: [
+    [0, 0.02, 0, 0.02, 0.02, 0, 0.01, 0],
+    [0.02, 0, 0.02, 0.02, 0.04, 0],
+  ],
+  workLetterSpacingByLength: {
+    3: [
+      [0.04, 0.22, 0],
+      [0.04, 0.22, 0],
+    ],
+    5: [
+      [0.02, 0, 0.02, 0.02, 0.04],
+      [0.02, 0, 0.02, 0.02, 0.04],
+    ],
+    8: [
+      [0, 0.02, 0, 0.02, 0.02, 0, 0.01, 0],
+      [0, 0.02, 0, 0.02, 0.02, 0, 0.01, 0],
+    ],
+  },
+};
+
+const PROJECT_TITLE_BANK = [
+  ['NIAN NIAN', 'DIARY'],
+  ['JOY', ''],
+  ['FIRST', 'STEPS'],
+  ['TINY', 'HANDS'],
+  ['SOFT', 'MORNING'],
+  ['LITTLE', 'DAYS'],
+  ['SMALL', 'WONDER'],
+  ['FAMILY', 'LIGHT'],
+  ['QUIET', 'PLAY'],
+  ['HAPPY', 'HOURS'],
+  ['GROWING', 'UP'],
+  ['SUNNY', 'WALK'],
+  ['BABY', 'DREAM'],
+  ['HOME', 'MOVIE'],
+  ['SWEET', 'TIME'],
+  ['LOVE', 'NOTES'],
+];
+
+const WORK_MEDIA_WINDOW = 7;
+const REFERENCE_WORK_MEDIA_OFFSETS = [0, 2, 3, 4, 6, 8, 9];
+
+const MORPH_POINTS = {
+  explore: {
+    arrow: '7,11.042 6.499,10.542 4.958,9 3.462,7.503 4.724,6.241 6.08,7.597 6.08,2.958 7.921,2.958 7.923,7.593 9.277,6.24 10.539,7.502 9.041,9 7.5,10.542',
+    cross: '7,11.042 6.08,11.042 6.08,7.889 2.958,7.889 2.958,6.096 6.08,6.096 6.08,2.958 7.921,2.958 7.921,6.096 11.042,6.096 11.042,7.889 7.921,7.889 7.921,11.042',
+  },
+  project: {
+    arrow: '9.277,7.759 10.539,6.497 8.298,4.256 8.298,4.256 7.001,2.958 7.001,2.958 7.001,2.958 5.703,4.256 5.703,4.256 3.462,6.498 4.724,7.76 6.077,6.407 6.077,11.042 7.001,11.042 7.921,11.042 7.921,6.403',
+    cross: '9.207,10.508 10.509,9.207 8.28,6.977 10.487,4.77 9.219,3.502 7.012,5.709 4.793,3.491 3.492,4.793 5.71,7.011 3.502,9.219 4.77,10.487 6.077,9.179 6.083,9.173 6.978,8.279 7.871,9.172 7.878,9.179',
+  },
+};
+
+const morphAnimations = new WeakMap();
+const morphHoverState = new WeakMap();
+
+init();
+
+async function init() {
+  state.photos = await loadPhotos();
+  applyRouteState({ initial: true, updateMode: false });
+  renderShell();
+  const texturesReady = setupScene();
+  attachEvents();
+  resize();
+  updateUi();
+  state.ready = true;
+
+  if (state.mode === VIEW.loading) {
+    releaseInitialLoading(texturesReady);
+  }
+
+  document.fonts?.ready.then(() => {
+    scheduleTitleLayout();
+  });
+
+  requestAnimationFrame(tick);
+}
+
+async function loadPhotos() {
+  const manifest = await fetch('/api/photos', { cache: 'no-store' })
+    .then((response) => (response.ok ? response.json() : Promise.reject()))
+    .catch(() =>
+      fetch('/data/photos.json', { cache: 'no-store' }).then((response) =>
+        response.ok ? response.json() : { photos: [] },
+      ),
+    )
+    .catch(() => ({ photos: [] }));
+
+  return normalizePhotos(manifest.photos || []);
+}
+
+function normalizePhotos(photos) {
+  return photos.map((photo, index) => {
+    const photoRgb = parseRgbColor(photo.color) || [188, 148, 57];
+    const palette = createPhotoPalette(photoRgb, index);
+    return {
+      ...photo,
+      code: String(index + 1).padStart(2, '0'),
+      color: rgbCss(photoRgb),
+      inOverLight: photoInOverLightFor(palette),
+      index: photo.index || index + 1,
+      multiply: photoMultiplyFor(palette),
+      palette,
+      slug: photo.slug || makePhotoSlug(photo, index),
+      title: photo.title || `念念 ${String(index + 1).padStart(3, '0')}`,
+      visitUrl: photo.visitUrl || photo.visit || '',
+    };
+  });
+}
+
+function getWorkMediaIndices(projectIndex = state.activeIndex) {
+  if (!state.photos.length) return [];
+  const explicit = resolveExplicitWorkMedia(state.photos[projectIndex]);
+  if (explicit.length) return explicit;
+
+  const limit = Math.min(WORK_MEDIA_WINDOW, state.photos.length);
+  const indices = [];
+  REFERENCE_WORK_MEDIA_OFFSETS.forEach((offset) => {
+    const index = projectIndex + offset;
+    if (indices.length < limit && index >= 0 && index < state.photos.length) {
+      indices.push(index);
+    }
+  });
+  for (let offset = 1; indices.length < limit && projectIndex + offset < state.photos.length; offset += 1) {
+    const forward = projectIndex + offset;
+    if (!indices.includes(forward)) indices.push(forward);
+  }
+  for (let offset = 1; indices.length < limit && projectIndex - offset >= 0; offset += 1) {
+    const backward = projectIndex - offset;
+    if (!indices.includes(backward)) indices.push(backward);
+  }
+  return indices;
+}
+
+function resolveExplicitWorkMedia(photo) {
+  const source = Array.isArray(photo?.workMedia)
+    ? photo.workMedia
+    : Array.isArray(photo?.media)
+      ? photo.media
+      : [];
+  if (!source.length) return [];
+
+  const indices = source
+    .map((item) => {
+      if (Number.isFinite(item)) return clamp(Math.round(item), 0, state.photos.length - 1);
+      const value = String(item);
+      return state.photos.findIndex(
+        (candidate) =>
+          candidate.slug === value ||
+          candidate.id === value ||
+          String(candidate.index) === value ||
+          String(candidate.index - 1) === value,
+      );
+    })
+    .filter((index) => index >= 0);
+  return [...new Set(indices)];
+}
+
+function getWorkMediaOrder(index) {
+  return getWorkMediaIndices().indexOf(index);
+}
+
+function getWorkImageSrc(index) {
+  const photo = state.photos[index];
+  return photo?.large || photo?.medium || photo?.thumb || '';
+}
+
+function getWorkVisitUrl() {
+  const activePhoto = state.photos[state.activeIndex];
+  const workPhoto = state.photos[state.workIndex] || activePhoto;
+  return activePhoto?.visitUrl || workPhoto?.visitUrl || getWorkImageSrc(state.workIndex) || getWorkImageSrc(state.activeIndex);
+}
+
+function warmWorkLayerImage(index) {
+  const src = getWorkImageSrc(index);
+  if (!src) return Promise.resolve('');
+
+  const cached = workImageDecodeCache.get(src);
+  if (cached) return cached.promise;
+
+  const image = new Image();
+  image.src = src;
+  const promise = image.decode
+    ? image.decode().catch(() => undefined).then(() => src)
+    : new Promise((resolve) => {
+        const done = () => resolve(src);
+        image.onload = done;
+        image.onerror = done;
+        if (image.complete) queueMicrotask(done);
+      });
+
+  workImageDecodeCache.set(src, { image, promise });
+  return promise;
+}
+
+function warmWorkMediaImages(projectIndex = state.activeIndex) {
+  const [activeWorkIndex] = getWorkMediaIndices(projectIndex);
+  if (Number.isFinite(activeWorkIndex)) warmWorkLayerImage(activeWorkIndex);
+}
+
+function makePhotoSlug(photo, index) {
+  const frame = String(photo.index || index + 1).padStart(3, '0');
+  return `nian-nian-${frame}`;
+}
+
+function renderShell() {
+  const total = state.photos.length || 0;
+  const activeTitle = shadowTitleFor(state.photos[state.activeIndex], state.activeIndex);
+  const ticks = Array.from(
+    { length: Math.max(total, 30) },
+    (_, index) => `<i data-tick="${index}" style="--tick-index:${index}"></i>`,
+  ).join('');
+  const pgnCount = Math.max(total, 30);
+  const totalShort = String(total).padStart(2, '0');
+  const paginationDigits = Array.from({ length: pgnCount }, (_, index) => {
+      const photoIndex = photoIndexForPaginationSlot(index);
+      const currentShort = String(photoIndex + 1).padStart(2, '0');
+      return `
+        <div class="pgn" data-pgn-index="${index}">
+          <div class="pgn-a"><div>${currentShort}</div></div>
+          <div class="pgn-b"><div>${totalShort}</div></div>
+        </div>
+      `;
+    }).join('');
+  const rails = state.photos
+    .map(
+      (photo, index) => `
+        <button class="detail-thumb" type="button" data-index="${index}" style="--thumb-index:${index}" aria-label="${photo.title}">
+          <span data-thumb-src="${photo.thumb || photo.medium || ''}"></span>
+        </button>
+      `,
+    )
+    .join('');
+  const workLayers = state.photos
+    .map(
+      (photo, index) => `
+        <div class="work-layer" data-work-index="${index}" aria-hidden="true">
+          <span class="work-layer-bg"></span>
+          <img class="work-layer-img" src="${EMPTY_MEDIA_SRC}" data-work-src="${photo.large || photo.medium || photo.thumb || ''}" alt="" draggable="false" loading="lazy" />
+        </div>
+      `,
+    )
+    .join('');
+
+  app.innerHTML = `
+    <section class="gallery-shell is-${state.mode}" data-mode="${state.mode}">
+      <section class="mobile-fallback" aria-label="移动端提示">
+        <header class="mobile-fallback-top">
+          <strong>NIANNIAN</strong>
+          <span>FAMILY PHOTO ARCHIVE<br />AVAILABLE LOCAL ↗</span>
+        </header>
+        <h1>13209<br />MEMORY</h1>
+        <p class="mobile-fallback-note">(VISIT ON A DESKTOP FOR A FULL GALLERY)</p>
+        <p class="mobile-fallback-copy">
+          NIAN NIAN'S LOCAL PHOTO ARCHIVE IS BUILT AS A DESKTOP WEBGL GALLERY,
+          WITH SHADER MOTION, PROJECT TRANSITIONS AND LARGE PHOTO PLANES.
+        </p>
+        <div class="mobile-fallback-contact">
+          <b>CONTACT</b>
+          <a href="/studio">STUDIO ↗</a>
+          <a href="/">HOME ↗</a>
+        </div>
+      </section>
+      <div class="loader-counter" aria-hidden="true">
+        <span><span data-loader-digit>0</span></span>
+        <span><span data-loader-digit>0</span></span>
+        <span><span data-loader-digit>1</span></span>
+      </div>
+
+      <header class="corner corner-left">
+        <a class="wordmark split-word" href="/" aria-label="念念 memory gallery">${splitLabelHtml('NIANNIAN')}</a>
+      </header>
+
+      <canvas class="pagination-canvas" aria-hidden="true"></canvas>
+      <div class="pagination-digits" aria-hidden="true">${paginationDigits}</div>
+      <div class="meter" aria-hidden="true">${ticks}</div>
+      <button class="corner corner-right about-link" type="button" data-action="about">
+        <span class="split-word" data-about-label>${splitLabelHtml('ABOUT')}</span>
+      </button>
+
+      <section class="project-shadow" aria-hidden="true">
+        <div class="project-pagination">
+          <span class="project-pagination-number project-pagination-number-a" aria-hidden="true">
+            <i data-shadow-current-prev>01</i>
+            <i data-shadow-current>01</i>
+          </span>
+          <button class="pagination-switch" type="button" data-action="close-detail" aria-label="返回项目列表">
+            <svg class="morph-icon" viewBox="0 0 14 14" focusable="false" aria-hidden="true">
+              <polygon points="${MORPH_POINTS.project.cross}"></polygon>
+            </svg>
+          </button>
+          <span class="project-pagination-number project-pagination-number-b" aria-hidden="true">
+            <i data-shadow-total-prev>${totalShort}</i>
+            <i data-shadow-total>${totalShort}</i>
+          </span>
+          <span class="project-pagination-line" aria-hidden="true"></span>
+          <span class="project-pagination-label">
+            <span>PROJECTS</span>
+          </span>
+        </div>
+        <div class="project-shadow-title project-shadow-title-active" data-shadow-title>
+          ${titleLineHtml(activeTitle[0], 0)}
+          ${titleLineHtml(activeTitle[1], 1)}
+        </div>
+        <div class="project-shadow-title project-shadow-title-prev" data-shadow-title-prev>
+          ${titleLineHtml(activeTitle[0], 0)}
+          ${titleLineHtml(activeTitle[1], 1)}
+        </div>
+        <div class="project-shadow-meta">
+          <div><b>A</b><span>CAPTURED</span><strong>LOCAL ARCHIVE</strong></div>
+          <div><b>B</b><span>TYPE</span><strong>FAMILY PHOTO</strong></div>
+          <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
+          <div><b>D</b><span>FRAME</span><strong data-shadow-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
+        </div>
+        <div class="project-shadow-meta project-shadow-meta-prev">
+          <div><b>A</b><span>CAPTURED</span><strong>LOCAL ARCHIVE</strong></div>
+          <div><b>B</b><span>TYPE</span><strong>FAMILY PHOTO</strong></div>
+          <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
+          <div><b>D</b><span>FRAME</span><strong data-shadow-frame-prev>001 / ${String(total).padStart(3, '0')}</strong></div>
+        </div>
+        <div class="project-shadow-copy" data-shadow-copy>
+          <div>AN INTIMATE LOCAL PHOTO ARCHIVE OF HER</div>
+          <div>NIAN NIAN'S EARLY DAYS.</div>
+        </div>
+        <div class="project-shadow-copy project-shadow-copy-prev" data-shadow-copy-prev>
+          <div>AN INTIMATE LOCAL PHOTO ARCHIVE OF HER</div>
+          <div>NIAN NIAN'S EARLY DAYS.</div>
+        </div>
+        <button class="shadow-explore" type="button" data-action="shadow-explore">
+          <span>EXPLORE</span>
+          <span>EXPLORE</span>
+        </button>
+      </section>
+
+      <nav class="project-nav" aria-label="详情导航">
+        <button type="button" data-action="close-detail">
+          <span class="split-word">${splitLabelHtml('PROJECTS')}</span>
+        </button>
+      </nav>
+
+      <section class="detail-title" aria-live="polite">
+        <span>NIAN</span>
+        <span>NIAN</span>
+      </section>
+
+      <section class="project-meta" aria-live="polite">
+        <div><b>A</b><span>CAPTURED</span><strong data-meta-date>LOCAL ARCHIVE</strong></div>
+        <div><b>B</b><span>TYPE</span><strong>FAMILY PHOTO</strong></div>
+        <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
+        <div><b>D</b><span>FRAME</span><strong data-meta-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
+      </section>
+
+      <div class="detail-rail" aria-label="照片缩略图">
+        <div class="detail-rail-track">${rails}</div>
+        <span class="detail-rail-active" aria-hidden="true"></span>
+      </div>
+
+      <section class="work-stage" aria-hidden="true">
+        <div class="work-stage-bg"></div>
+        ${workLayers}
+      </section>
+
+      <button class="visit-link" type="button" data-action="next-photo" data-morph-trigger="explore">
+        <strong class="split-word visit-label-detail">${splitLabelHtml('EXPLORE')}</strong>
+        <strong class="split-word visit-label-work">${splitLabelHtml('VISIT SITE')}</strong>
+        <span class="visit-line" aria-hidden="true"></span>
+        <span class="visit-symbol" aria-hidden="true" data-morph-symbol="explore">
+          <svg class="morph-icon" viewBox="0 0 14 14" focusable="false" aria-hidden="true">
+            <polygon points="${MORPH_POINTS.explore.cross}"></polygon>
+          </svg>
+        </span>
+      </button>
+
+      <section class="index-note index-note-left">
+        <p>PRIVATE PHOTO ARCHIVE<br />AVAILABLE LOCAL</p>
+      </section>
+      <section class="index-note index-note-right">
+        <span>MEMORY</span>
+        <span>ARCHIVE</span>
+        <span>LOCAL</span>
+      </section>
+
+      <section class="index-readout" aria-live="polite">
+        <span data-current>001</span>
+        <span data-total>${String(total).padStart(3, '0')}</span>
+        <strong data-title>念念 001</strong>
+      </section>
+
+      <section class="about-panel" aria-label="关于念念照片档案" aria-hidden="${state.mode !== VIEW.about}">
+        <div class="about-hero" aria-hidden="true">
+          <span>NIAN</span>
+          <span>NIAN</span>
+        </div>
+        <p class="about-copy">
+          NIAN NIAN'S PRIVATE LOCAL PHOTO ARCHIVE, BUILT TO KEEP SMALL DAYS VISIBLE.
+          NEW PHOTOS CAN BE ADDED THROUGH THE PRIVATE STUDIO.
+        </p>
+        <div class="about-social">
+          <button type="button" data-action="studio-link">STUDIO</button>
+          <button type="button" data-action="close-about">HOME</button>
+        </div>
+        <div class="about-list" aria-label="档案信息">
+          <div>
+            <b>ARCHIVE</b>
+            <span><i>A</i><strong data-about-total>${String(total).padStart(3, '0')} PHOTOS</strong></span>
+            <span><i>B</i><strong>LOCAL FIRST</strong></span>
+            <span><i>C</i><strong>FAMILY MEMORY</strong></span>
+          </div>
+          <div>
+            <b>ACCESS</b>
+            <span><i>1</i><strong>/STUDIO</strong></span>
+            <span><i>2</i><strong>KEY 13209</strong></span>
+            <span><i>3</i><strong>TYPE NIAN</strong></span>
+          </div>
+          <div>
+            <b>DAYS</b>
+            <span><i>01</i><strong>FIRST STEPS</strong></span>
+            <span><i>02</i><strong>QUIET MORNINGS</strong></span>
+            <span><i>03</i><strong>SMALL ADVENTURES</strong></span>
+          </div>
+        </div>
+        <p class="about-rights">PRIVATE FAMILY ARCHIVE<br />NIAN NIAN 2026</p>
+      </section>
+
+      <section class="studio-panel" aria-label="上传照片" aria-hidden="${state.mode !== VIEW.studio}">
+        <form class="studio-form">
+          <div>
+            <p class="kicker">PRIVATE ROOM</p>
+            <h2>Upload</h2>
+          </div>
+          <input name="username" type="hidden" autocomplete="username" value="nian" />
+          <label>
+            <span>Key</span>
+            <input name="key" type="password" autocomplete="current-password" required />
+          </label>
+          <label>
+            <span>Title Prefix</span>
+            <input name="titlePrefix" type="text" autocomplete="off" maxlength="18" value="念念" />
+          </label>
+          <label>
+            <span>Photos</span>
+            <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required />
+            <em class="studio-file-count" data-studio-file-count>0 FILES</em>
+          </label>
+          <div class="studio-actions">
+            <button type="submit" data-studio-submit>Send</button>
+            <button type="button" data-action="close-studio">Close</button>
+          </div>
+          <p class="studio-status" role="status"></p>
+        </form>
+      </section>
+    </section>
+  `;
+
+  galleryEls = {
+    current: app.querySelector('[data-current]'),
+    detailRail: app.querySelector('.detail-rail'),
+    detailRailTrack: app.querySelector('.detail-rail-track'),
+    frame: app.querySelector('[data-meta-frame]'),
+    loaderDigits: [...app.querySelectorAll('[data-loader-digit]')],
+    meter: [...app.querySelectorAll('.meter i')],
+    paginationCanvas: app.querySelector('.pagination-canvas'),
+    paginationDigits: app.querySelector('.pagination-digits'),
+    paginationItems: [...app.querySelectorAll('.pgn')],
+    projectPagination: app.querySelector('.project-pagination'),
+    shadowCurrent: app.querySelector('[data-shadow-current]'),
+    shadowCurrentPrev: app.querySelector('[data-shadow-current-prev]'),
+    shadowFrame: app.querySelector('[data-shadow-frame]'),
+    shadowFramePrev: app.querySelector('[data-shadow-frame-prev]'),
+    shadowTitle: app.querySelector('[data-shadow-title]'),
+    shadowTitlePrev: app.querySelector('[data-shadow-title-prev]'),
+    shadowTotal: app.querySelector('[data-shadow-total]'),
+    shadowTotalPrev: app.querySelector('[data-shadow-total-prev]'),
+    shell: app.querySelector('.gallery-shell'),
+    studioFileCount: app.querySelector('[data-studio-file-count]'),
+    status: app.querySelector('.studio-status'),
+    studioPanel: app.querySelector('.studio-panel'),
+    aboutLabel: app.querySelector('[data-about-label]'),
+    aboutPanel: app.querySelector('.about-panel'),
+    aboutTotal: app.querySelector('[data-about-total]'),
+    thumbs: [...app.querySelectorAll('.detail-thumb')],
+    title: app.querySelector('[data-title]'),
+    total: app.querySelector('[data-total]'),
+    visitLink: app.querySelector('.visit-link'),
+    workStage: app.querySelector('.work-stage'),
+    workStageBg: app.querySelector('.work-stage-bg'),
+    workLayers: [...app.querySelectorAll('.work-layer')],
+  };
+  resetMotionState();
+
+  if (!state.photos.length) {
+    galleryEls.title.textContent = 'NO PHOTOS';
+    galleryEls.status.textContent = 'No photos synced yet.';
+  }
+}
+
+function setupScene() {
+  for (const mesh of planes) {
+    scene.remove(mesh);
+  }
+  planes.length = 0;
+  state.loaderLoaded = 0;
+  state.loaderTotal = Math.max(state.photos.length, 1);
+  state.loaderReady = state.photos.length === 0;
+  state.loaderValue = 1;
+
+  ensureBackgroundPlane();
+
+  const texturePromises = state.photos.map((photo, index) => {
+    const uniforms = {
+      uAccent: { value: threeColorFromRgb(photo.palette?.text || BASE_TEXT_RGB) },
+      uAlpha: { value: 0 },
+      uColorMix: { value: 0 },
+      uCurve: { value: 0 },
+      uCurveRadius: { value: 0.55 },
+      uDetail: { value: 0 },
+      uHasTexture: { value: 1 },
+      uImageAspect: { value: photo.aspect || 1.45 },
+      uIndex: { value: index },
+      uHover: { value: 0 },
+      uIntro: { value: 0 },
+      uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+      uMultiply: { value: 0.18 },
+      uPhotoY: { value: 0 },
+      uPlaneAspect: { value: 0.32 },
+      uTextureScale: { value: 0 },
+      uTexture: { value: emptyTexture },
+      uTime: { value: 0 },
+      uTransition: { value: 1 },
+      uVelocity: { value: 0 },
+      uSwitch: { value: 0 },
+      uSwitchDirection: { value: 1 },
+      uSolidColor: { value: threeColorFromRgb(state.surfaceRgb) },
+      uUvScale: { value: new THREE.Vector2(1, 1) },
+      uWorldToPx: { value: window.innerHeight / 2 },
+    };
+
+    const material = new THREE.ShaderMaterial({
+      depthTest: false,
+      depthWrite: false,
+      uniforms,
+      transparent: true,
+      vertexShader,
+      fragmentShader,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 19, 1), material);
+    mesh.userData = { index, photo, target: {}, uniforms };
+    scene.add(mesh);
+    planes.push(mesh);
+
+    return loadPlaneTexture(photo, uniforms);
+  });
+
+  if (!texturePromises.length) {
+    updateLoaderCounter(true);
+    return Promise.resolve();
+  }
+
+  updateLoaderCounter(true);
+  return Promise.allSettled(texturePromises).then(() => {
+    state.loaderReady = true;
+  });
+}
+
+function ensureBackgroundPlane() {
+  if (backgroundPlane) return;
+  const uniforms = {
+    uAccent: { value: new THREE.Color(1, 1, 1) },
+    uAlpha: { value: 1 },
+    uColorMix: { value: 0 },
+    uCurve: { value: 0 },
+    uCurveRadius: { value: 0 },
+    uDetail: { value: 0 },
+    uHasTexture: { value: 0 },
+    uImageAspect: { value: 1 },
+    uIndex: { value: -1 },
+    uHover: { value: 0 },
+    uIntro: { value: 0 },
+    uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+    uMultiply: { value: 0 },
+    uPhotoY: { value: 0 },
+    uPlaneAspect: { value: 1 },
+    uTextureScale: { value: 0 },
+    uTexture: { value: emptyTexture },
+    uTime: { value: 0 },
+    uTransition: { value: 0 },
+    uVelocity: { value: 0 },
+    uSwitch: { value: 0 },
+    uSwitchDirection: { value: 1 },
+    uSolidColor: { value: threeColorFromRgb(state.surfaceRgb) },
+    uUvScale: { value: new THREE.Vector2(1, 1) },
+    uWorldToPx: { value: window.innerHeight / 2 },
+  };
+  const material = new THREE.ShaderMaterial({
+    depthTest: false,
+    depthWrite: false,
+    uniforms,
+    transparent: false,
+    vertexShader,
+    fragmentShader,
+  });
+  backgroundPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 1, 1), material);
+  backgroundPlane.renderOrder = -1000;
+  backgroundPlane.userData = { uniforms };
+  scene.add(backgroundPlane);
+  updateBackgroundPlane();
+}
+
+function loadPlaneTexture(photo, uniforms) {
+  const primarySrc = photo.medium || photo.large || photo.thumb;
+  const fallbackSrc = photo.thumb && photo.thumb !== primarySrc ? photo.thumb : '';
+
+  return new Promise((resolve) => {
+    const finish = () => {
+      markTextureLoaded();
+      resolve();
+    };
+    const loadFallback = () => {
+      if (!fallbackSrc) {
+        finish();
+        return;
+      }
+      loader.load(
+        fallbackSrc,
+        (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          uniforms.uTexture.value = texture;
+          finish();
+        },
+        undefined,
+        finish,
+      );
+    };
+
+    if (!primarySrc) {
+      finish();
+      return;
+    }
+
+    loader.load(
+      primarySrc,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.anisotropy = 8;
+        uniforms.uTexture.value = texture;
+        finish();
+      },
+      undefined,
+      loadFallback,
+    );
+  });
+}
+
+function markTextureLoaded() {
+  state.loaderLoaded = clamp(state.loaderLoaded + 1, 0, state.loaderTotal);
+  updateLoaderCounter(true);
+}
+
+function releaseInitialLoading(texturesReady) {
+  texturesReady.then(() => {
+    const elapsed = performance.now() - state.loaderStartedAt;
+    const hold = Math.max(0, 500 - elapsed);
+    window.setTimeout(() => {
+      if (state.mode === VIEW.loading) setMode(state.initialRouteMode || VIEW.index);
+    }, hold);
+  });
+}
+
+function attachEvents() {
+  window.addEventListener('resize', resize);
+  window.addEventListener('wheel', onWheel, { passive: false });
+  window.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('mousemove', onMorphMouseMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('popstate', () => {
+    applyRouteState({ fromPop: true });
+  });
+
+  app.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-action]');
+    const thumb = event.target.closest('[data-index]');
+
+    if (thumb) {
+      const thumbIndex = Number(thumb.dataset.index);
+      if (state.mode === VIEW.work) {
+        if (getWorkMediaOrder(thumbIndex) >= 0) setWorkIndex(thumbIndex);
+      } else {
+        setActive(thumbIndex, true);
+        setMode(VIEW.detail);
+      }
+      return;
+    }
+
+    if (!action) return;
+    const name = action.dataset.action;
+    if (name === 'close-detail') {
+      setMode(state.mode === VIEW.work ? VIEW.detail : VIEW.index);
+    }
+    if (name === 'next-photo') {
+      if (state.mode === VIEW.work) {
+        const visitUrl = getWorkVisitUrl();
+        if (visitUrl) window.open(visitUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        setMode(VIEW.work);
+      }
+    }
+    if (name === 'shadow-explore') {
+      setMode(VIEW.detail);
+    }
+    if (name === 'about') {
+      if (state.mode === VIEW.about) {
+        closeAbout();
+      } else {
+        setMode(VIEW.about);
+      }
+    }
+    if (name === 'close-about') {
+      closeAbout();
+    }
+    if (name === 'studio-link') {
+      setMode(VIEW.studio);
+      app.querySelector('input[name="key"]')?.focus();
+    }
+    if (name === 'close-studio') {
+      setMode(VIEW.index);
+    }
+  });
+
+  app.addEventListener('pointerover', onMorphEnter);
+  app.addEventListener('pointerout', onMorphLeave);
+  app.addEventListener('mouseover', onMorphEnter);
+  app.addEventListener('mouseout', onMorphLeave);
+
+  app.addEventListener('submit', (event) => {
+    if (event.target.matches('.studio-form')) {
+      onStudioSubmit(event);
+    }
+  });
+
+  app.addEventListener('change', (event) => {
+    if (event.target.matches('input[name="photos"]')) {
+      updateStudioFileCount(event.target.form);
+    }
+  });
+}
+
+function onMorphEnter(event) {
+  const trigger = getMorphTrigger(event);
+  if (trigger) morphIcon(trigger, 'arrow');
+}
+
+function onMorphLeave(event) {
+  const trigger = getMorphTrigger(event);
+  if (trigger) morphIcon(trigger, 'cross');
+}
+
+function getMorphTrigger(event) {
+  const trigger = event.target.closest('[data-morph-trigger], [data-morph-symbol]');
+  if (!trigger || !app.contains(trigger)) return null;
+  if (event.relatedTarget && trigger.contains(event.relatedTarget)) return null;
+  return trigger;
+}
+
+function onMorphMouseMove(event) {
+  if (!galleryEls.shell) return;
+  app.querySelectorAll('[data-morph-trigger]').forEach((trigger) => {
+    const rect = trigger.getBoundingClientRect();
+    const inside = event.clientX >= rect.left
+      && event.clientX <= rect.right
+      && event.clientY >= rect.top
+      && event.clientY <= rect.bottom;
+    if (morphHoverState.get(trigger) === inside) return;
+    morphHoverState.set(trigger, inside);
+    morphIcon(trigger, inside ? 'arrow' : 'cross');
+  });
+}
+
+function morphIcon(trigger, shape) {
+  const type = trigger.dataset.morphTrigger || trigger.dataset.morphSymbol;
+  const points = MORPH_POINTS[type]?.[shape];
+  if (!points) return;
+
+  const symbol = trigger.matches('[data-morph-symbol]')
+    ? trigger
+    : trigger.querySelector(`[data-morph-symbol="${type}"]`);
+  const polygon = symbol?.querySelector('polygon');
+  if (!polygon) return;
+
+  const start = parseSvgPoints(polygon.getAttribute('points'));
+  const end = parseSvgPoints(points);
+  const existing = morphAnimations.get(polygon);
+  if (existing) window.cancelAnimationFrame(existing);
+  if (start.length !== end.length) {
+    polygon.setAttribute('points', points);
+    return;
+  }
+
+  const startedAt = performance.now();
+  const duration = 700;
+  const animate = (now) => {
+    const progress = clamp((now - startedAt) / duration, 0, 1);
+    const eased = 1 - Math.pow(1 - progress, 5);
+    const next = start.map((value, index) => mix(value, end[index], eased));
+    polygon.setAttribute('points', formatSvgPoints(next));
+    if (progress < 1) {
+      morphAnimations.set(polygon, window.requestAnimationFrame(animate));
+    } else {
+      polygon.setAttribute('points', points);
+      morphAnimations.delete(polygon);
+    }
+  };
+
+  morphAnimations.set(polygon, window.requestAnimationFrame(animate));
+}
+
+function parseSvgPoints(points) {
+  return String(points || '')
+    .trim()
+    .split(/\s+/)
+    .flatMap((pair) => pair.split(',').map(Number));
+}
+
+function formatSvgPoints(points) {
+  const pairs = [];
+  for (let index = 0; index < points.length; index += 2) {
+    pairs.push(`${points[index].toFixed(3)},${points[index + 1].toFixed(3)}`);
+  }
+  return pairs.join(' ');
+}
+
+function resize() {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  renderer.setSize(width, height, false);
+  canvas.dataset.webglDpr = String(WEBGL_DPR);
+  canvas.dataset.webglBackingWidth = String(canvas.width);
+  canvas.dataset.webglBackingHeight = String(canvas.height);
+  viewport = {
+    aspect: width / height,
+    height: 2,
+    width: 2 * (width / height),
+  };
+  camera.aspect = width / height;
+  camera.fov = CAMERA_FOV;
+  camera.updateProjectionMatrix();
+  updateBackgroundPlane();
+  resizePaginationCanvas();
+  resetPaginationMotion();
+  updateUi();
+  if (state.mode === VIEW.work) {
+    primeWorkLayerMotion({ preserveImages: true });
+    primeWorkThumbMotion({ preserveVisible: true });
+  }
+  scheduleTitleLayout();
+}
+
+function onWheel(event) {
+  if (state.mode === VIEW.studio || state.mode === VIEW.about) return;
+  event.preventDefault();
+
+  if (state.mode === VIEW.work) {
+    return;
+  }
+
+  if (state.mode === VIEW.detail) {
+    state.transition = Math.max(state.transition, 0.88);
+    state.switchPulse = Math.max(state.switchPulse, 0.72);
+    setMode(VIEW.index);
+    return;
+  }
+
+  state.targetScroll += getWheelScrollDelta(event) * getReferenceMetrics().pxToWorld;
+  markHomeMotionActive();
+  clampTarget();
+}
+
+function onPointerDown(event) {
+  if (state.mode === VIEW.studio || state.mode === VIEW.about) return;
+  syncPointer(event);
+  state.dragging = true;
+  state.dragMoved = 0;
+  state.dragOriginScroll = state.targetScroll;
+  state.dragOriginX = event.clientX;
+  state.dragStart = event.clientX;
+  canvas.setPointerCapture?.(event.pointerId);
+}
+
+function onPointerMove(event) {
+  syncPointer(event);
+
+  if (state.mode === VIEW.index) {
+    updateHoverFromPointer();
+  }
+  updatePaginationHover();
+
+  if (!state.dragging) return;
+
+  const previousClientX = state.dragStart;
+  const referencePreviousClientX = state.dragPreviousX;
+  const delta = event.clientX - previousClientX;
+  state.dragStart = event.clientX;
+  state.dragMoved += Math.abs(delta);
+  if (state.mode === VIEW.index || state.mode === VIEW.detail) {
+    adjustDragOriginAtBounds(event.clientX, referencePreviousClientX);
+  }
+  const dragTarget = getPointerDragTarget(event.clientX);
+  state.dragPreviousX = event.clientX;
+
+  if (state.mode === VIEW.detail) {
+    const targetMovement = Math.abs(dragTarget - state.dragOriginScroll) / getDragSensitivity();
+    if (targetMovement > 6) {
+      const carryTarget = clamp(dragTarget, 0, getMaxScroll());
+      state.dragOriginScroll = carryTarget;
+      state.transition = Math.max(state.transition, 0.72);
+      state.switchPulse = Math.max(state.switchPulse, 0.5);
+      markHomeMotionActive();
+      setMode(VIEW.index);
+    }
+    return;
+  }
+
+  if (state.mode !== VIEW.index) return;
+
+  state.targetScroll = dragTarget;
+  markHomeMotionActive();
+  clampTarget();
+}
+
+function onPointerUp(event) {
+  syncPointer(event);
+  const wasDragging = state.dragging;
+  state.dragging = false;
+  canvas.releasePointerCapture?.(event.pointerId);
+
+  if (!wasDragging || state.dragMoved < 9) {
+    updatePaginationHover();
+    if (state.paginationHoverIndex >= 0) {
+      if (state.mode === VIEW.index) {
+        setHomeScrollTargetIndex(state.paginationHoverIndex);
+      } else {
+        setActive(state.paginationHoverIndex, true);
+      }
+      return;
+    }
+  }
+
+  if (state.mode === VIEW.index && wasDragging && state.dragMoved < 9) {
+    updateHoverFromPointer();
+    if (state.hoverIndex < 0) return;
+    setActive(state.hoverIndex, true);
+    setMode(VIEW.detail);
+    return;
+  }
+
+  if (state.mode === VIEW.detail && wasDragging && state.dragMoved < 9) {
+    updateHoverFromPointer();
+    if (state.hoverIndex < 0 || state.hoverIndex === state.activeIndex) return;
+    setActive(state.hoverIndex, true);
+  }
+}
+
+function syncPointer(event) {
+  state.pointerActive = true;
+  pointer.x = event.clientX / window.innerWidth;
+  pointer.y = 1 - event.clientY / window.innerHeight;
+}
+
+function onKeyDown(event) {
+  const key = event.key;
+  const lowerKey = key.toLowerCase();
+  state.keyBuffer = `${state.keyBuffer}${lowerKey}`.slice(-8);
+  if (state.keyBuffer.endsWith('nian')) {
+    setMode(VIEW.studio);
+    app.querySelector('input[name="key"]')?.focus();
+  }
+
+  if (state.mode === VIEW.about) {
+    if (key === 'Tab') {
+      event.preventDefault();
+      return;
+    }
+    if (key === 'Escape' || key === 'ArrowUp' || lowerKey === 'c') {
+      event.preventDefault();
+      closeAbout();
+    }
+    return;
+  }
+
+  if (state.mode === VIEW.index) {
+    if (key === 'Tab') {
+      event.preventDefault();
+      return;
+    }
+    if (lowerKey === 'a') {
+      event.preventDefault();
+      setMode(VIEW.about);
+      return;
+    }
+    if (key === 'ArrowRight' || key === ' ') {
+      event.preventDefault();
+      setHomeScrollTargetIndex(state.activeIndex + 7);
+      return;
+    }
+    if (key === 'ArrowLeft') {
+      event.preventDefault();
+      setHomeScrollTargetIndex(state.activeIndex - 7);
+      return;
+    }
+    if (key === 'Enter' || key === 'ArrowDown') {
+      event.preventDefault();
+      const targetIndex = state.hoverIndex >= 0 ? state.hoverIndex : state.activeIndex;
+      setActive(targetIndex, true);
+      setMode(VIEW.detail);
+    }
+    return;
+  }
+
+  if (state.mode === VIEW.work) {
+    if (key === 'Tab') {
+      event.preventDefault();
+      return;
+    }
+    const isUp = key === 'ArrowUp';
+    const isPrevious = isUp || key === 'ArrowLeft';
+    const isNext = key === 'ArrowDown' || key === 'ArrowRight' || key === ' ';
+    if (lowerKey === 'a') {
+      event.preventDefault();
+      setMode(VIEW.about);
+      return;
+    }
+    if (isNext || isPrevious) {
+      event.preventDefault();
+      const media = getWorkMediaIndices();
+      const currentOrder = Math.max(0, media.indexOf(state.workIndex));
+      const nextOrder = currentOrder + (isNext ? 1 : -1);
+      if (nextOrder < 0) {
+        if (isUp) setMode(VIEW.detail);
+        return;
+      }
+      if (nextOrder >= media.length) return;
+      setWorkIndex(media[nextOrder]);
+      return;
+    }
+    if (key === 'Escape' || lowerKey === 'p') {
+      event.preventDefault();
+      setMode(VIEW.detail);
+    }
+    return;
+  }
+
+  if (state.mode === VIEW.detail) {
+    if (key === 'Tab') {
+      event.preventDefault();
+      return;
+    }
+    if (lowerKey === 'a') {
+      event.preventDefault();
+      setMode(VIEW.about);
+      return;
+    }
+    if (key === 'ArrowRight' || key === ' ') {
+      event.preventDefault();
+      setActive(state.activeIndex + 1, true);
+      return;
+    }
+    if (key === 'ArrowLeft') {
+      event.preventDefault();
+      setActive(state.activeIndex - 1, true);
+      return;
+    }
+    if (key === 'Enter' || key === 'ArrowDown' || lowerKey === 'e') {
+      event.preventDefault();
+      setMode(VIEW.work);
+      return;
+    }
+    if (key === 'Escape' || key === 'ArrowUp') {
+      event.preventDefault();
+      setMode(VIEW.index);
+    }
+    return;
+  }
+
+  if (state.mode === VIEW.studio && key === 'Escape') {
+    setMode(VIEW.index);
+  }
+}
+
+async function onStudioSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const payload = new FormData(form);
+  const files = form.elements.photos?.files || [];
+  const submitButton = form.querySelector('[data-studio-submit]');
+
+  if (!files.length) {
+    galleryEls.status.textContent = 'Choose photos first.';
+    return;
+  }
+
+  form.classList.add('is-uploading');
+  submitButton.disabled = true;
+  form.querySelectorAll('input, button').forEach((control) => {
+    control.disabled = true;
+  });
+  galleryEls.status.textContent = 'Uploading...';
+
+  try {
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: payload,
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || 'Upload failed.');
+    galleryEls.status.textContent = `Uploaded. ${String(result.count).padStart(3, '0')} photos in archive.`;
+    state.photos = normalizePhotos(result.photos);
+    workImageDecodeCache.clear();
+    renderShell();
+    setupScene();
+    resize();
+    setActive(state.photos.length - 1, true);
+    setMode(VIEW.detail);
+  } catch (error) {
+    galleryEls.status.textContent = error.message;
+    form.classList.remove('is-uploading');
+    form.querySelectorAll('input, button').forEach((control) => {
+      control.disabled = false;
+    });
+    submitButton.disabled = false;
+  }
+}
+
+function updateStudioFileCount(form) {
+  const target = form?.querySelector('[data-studio-file-count]') || galleryEls.studioFileCount;
+  const files = form?.elements.photos?.files || [];
+  if (!target) return;
+  const count = files.length;
+  const totalSize = [...files].reduce((sum, file) => sum + file.size, 0);
+  const sizeLabel = totalSize > 0 ? ` / ${formatBytes(totalSize)}` : '';
+  target.textContent = `${count} ${count === 1 ? 'FILE' : 'FILES'}${sizeLabel}`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+}
+
+function tick() {
+  const delta = clock.getDelta();
+  const elapsed = clock.elapsedTime;
+  frameDelta = clamp(delta / (1 / 60), 0.25, 4);
+  const previous = state.scroll;
+  const planeMode = getPlaneSourceMode();
+  const detailTarget = planeMode === VIEW.detail || planeMode === VIEW.work ? 1 : 0;
+  const workTarget = planeMode === VIEW.work ? 1 : 0;
+  const projectSwitchElapsed = state.projectSwitchStartedAt ? performance.now() - state.projectSwitchStartedAt : Infinity;
+  const earlyProjectSwitchScroll = state.mode === VIEW.detail && projectSwitchElapsed < 180;
+  const scrollEase = earlyProjectSwitchScroll
+    ? DETAIL_SWITCH_EARLY_SCROLL_EASE
+    : state.mode === VIEW.index || state.mode === VIEW.loading
+      ? 0.08
+      : 0.07;
+
+  state.scroll = damp(state.scroll, state.targetScroll, scrollEase);
+  state.velocity = damp(state.velocity, state.scroll - previous, 0.18);
+  updateMotionLatency();
+  const motionMetrics = getReferenceMetrics();
+  canvas.dataset.scrollPx = (state.scroll / motionMetrics.pxToWorld).toFixed(2);
+  canvas.dataset.targetScrollPx = (state.targetScroll / motionMetrics.pxToWorld).toFixed(2);
+  canvas.dataset.dragMoved = state.dragMoved.toFixed(2);
+  state.detailMix = damp(state.detailMix, detailTarget, 0.07);
+  state.workMix = damp(state.workMix, workTarget, 0.07);
+  state.transition = damp(state.transition, 0, 0.055);
+  state.switchPulse = damp(state.switchPulse, 0, 0.075);
+  state.homeIntro = damp(state.homeIntro, 0, 0.15);
+  updatePaletteMotion();
+  updateRendererClear();
+
+  if (state.pointerActive) {
+    if (state.mode === VIEW.index) {
+      if (performance.now() >= state.homeMotionActiveUntil) {
+        updateHoverFromPointer();
+      } else {
+        state.hoverIndex = -1;
+      }
+      updatePaginationHover();
+    } else if (state.mode === VIEW.detail) {
+      updateHoverFromPointer();
+    } else {
+      state.hoverIndex = -1;
+    }
+  }
+
+  if (state.mode === VIEW.index) {
+    const step = getStep();
+    const active = clamp(Math.round(state.scroll / step), 0, state.photos.length - 1);
+    if (active !== state.activeIndex) {
+      state.activeIndex = active;
+      updateUi();
+    }
+  }
+
+  for (const mesh of planes) {
+    layoutPlane(mesh, elapsed);
+  }
+
+  renderer.render(scene, camera);
+  drawPagination(elapsed);
+  updateDomMotion();
+  requestAnimationFrame(tick);
+}
+
+function resizePaginationCanvas() {
+  const canvas = galleryEls.paginationCanvas;
+  if (!canvas) return;
+  const dpr = PAGINATION_DPR;
+  canvas.width = Math.round(window.innerWidth * dpr);
+  canvas.height = Math.round(window.innerHeight * dpr);
+  canvas.style.width = `${window.innerWidth}px`;
+  canvas.style.height = `${window.innerHeight}px`;
+  canvas.dataset.paginationDpr = String(dpr);
+  canvas.dataset.paginationBackingWidth = String(canvas.width);
+  canvas.dataset.paginationBackingHeight = String(canvas.height);
+  paginationCtx = canvas.getContext('2d', { alpha: true });
+  paginationCtx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+function updatePaginationHover() {
+  if (state.mode === VIEW.loading || state.mode === VIEW.studio) {
+    state.paginationHoverIndex = -1;
+    galleryEls.shell?.classList.remove('is-pagination-hovering');
+    return;
+  }
+  const metrics = getPaginationMetrics();
+  const px = pointer.x * window.innerWidth;
+  const py = (1 - pointer.y) * window.innerHeight;
+  if (py < metrics.top - 8 || py > metrics.top + metrics.height + 8) {
+    state.paginationHoverIndex = -1;
+    galleryEls.shell?.classList.remove('is-pagination-hovering');
+    return;
+  }
+  let visual = -1;
+  const maxPhotoIndex = Math.max(state.photos.length - 1, 1);
+  if (state.mode === VIEW.detail || state.mode === VIEW.work) {
+    const activeVisual = metrics.count > 1 ? (state.activeIndex / maxPhotoIndex) * (metrics.count - 1) : 0;
+    const openTick = Math.round(activeVisual);
+    const hitPad = metrics.gapX * 0.5;
+    let closestDistance = Infinity;
+    for (let index = 0; index < metrics.count; index += 1) {
+      let tickX = metrics.openLeft + index * metrics.step;
+      if (index < openTick) tickX -= metrics.letterSpace;
+      if (index > openTick) tickX += metrics.activeWidth + metrics.letterSpace;
+      const tickWidth = index === openTick ? metrics.activeWidth : metrics.outWidth;
+      const left = tickX - hitPad;
+      const right = tickX + tickWidth + hitPad;
+      if (px >= left && px <= right) {
+        const center = tickX + tickWidth * 0.5;
+        const distance = Math.abs(px - center);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          visual = index;
+        }
+      }
+    }
+  } else {
+    const local = (px - metrics.left) / metrics.step;
+    visual = clamp(Math.round(local), 0, metrics.count - 1);
+  }
+  const next = metrics.count > 1
+    ? Math.round((visual / (metrics.count - 1)) * Math.max(state.photos.length - 1, 0))
+    : 0;
+  state.paginationHoverIndex = visual >= 0 && Number.isFinite(next) ? next : -1;
+  galleryEls.shell?.classList.toggle(
+    'is-pagination-hovering',
+    state.paginationHoverIndex >= 0 && state.mode === VIEW.index,
+  );
+}
+
+function drawPagination() {
+  const canvas = galleryEls.paginationCanvas;
+  if (!canvas || !paginationCtx) return;
+  const ctx = paginationCtx;
+  const width = canvas.width;
+  const height = canvas.height;
+  const dpr = PAGINATION_DPR;
+  const metrics = getPaginationMetrics();
+  const maxPhotoIndex = Math.max(state.photos.length - 1, 1);
+  const isProjectSurface = state.mode === VIEW.detail || state.mode === VIEW.work;
+  const isHomeSurface = state.mode === VIEW.index || state.mode === VIEW.loading;
+  const scrollVisual = isHomeSurface
+    ? clamp(state.scroll / getStep(), 0, maxPhotoIndex)
+    : state.activeIndex;
+  const activeVisual = metrics.count > 1 ? (scrollVisual / maxPhotoIndex) * (metrics.count - 1) : 0;
+  const waveCenter = isHomeSurface && getMaxScroll() > 0
+    ? roundTo((state.scroll / getMaxScroll()) * metrics.photoCount, 2)
+    : activeVisual;
+  const hoverTarget = state.paginationHoverIndex >= 0 && state.mode !== VIEW.about && state.mode !== VIEW.studio ? 1 : 0;
+  state.paginationOpen = damp(
+    state.paginationOpen,
+    isProjectSurface ? 1 : 0,
+    isProjectSurface ? 0.1 : 0.08,
+  );
+  const shapeOpen = clamp(state.paginationOpen, 0, 1);
+  const alpha = state.mode === VIEW.about || state.mode === VIEW.studio ? 0 : 1;
+  const ink = state.textRgb.map((value) => Math.round(value));
+
+  ctx.clearRect(0, 0, width, height);
+  if (!alpha || !metrics.count) return;
+
+  ctx.lineWidth = dpr;
+  const hoverVisual = state.paginationHoverIndex >= 0
+    ? (state.paginationHoverIndex / maxPhotoIndex) * (metrics.count - 1)
+    : -100;
+  const openTick = Math.round(activeVisual);
+  const baseTopTarget = isProjectSurface ? 0 : metrics.top;
+  const baseHeightTarget = isProjectSurface ? metrics.openHeight : metrics.height;
+  const latencyLift = 30 * clamp(state.curveLatency, 0, 1);
+
+  if (!state.paginationHeight) state.paginationHeight = baseHeightTarget;
+  state.paginationTop = damp(state.paginationTop, baseTopTarget, 0.1);
+  state.paginationHeight = damp(state.paginationHeight, baseHeightTarget, 0.1);
+  canvas.dataset.paginationActiveVisual = activeVisual.toFixed(3);
+  canvas.dataset.paginationHeight = state.paginationHeight.toFixed(3);
+  canvas.dataset.paginationHeightTarget = baseHeightTarget.toFixed(3);
+  canvas.dataset.paginationLatencyLift = latencyLift.toFixed(3);
+  canvas.dataset.paginationTop = state.paginationTop.toFixed(3);
+  canvas.dataset.paginationTopTarget = baseTopTarget.toFixed(3);
+  canvas.dataset.paginationMetricHeight = metrics.height.toFixed(3);
+  canvas.dataset.paginationCount = String(metrics.count);
+  canvas.dataset.paginationPhotoCount = String(metrics.photoCount);
+  canvas.dataset.paginationLeft = metrics.left.toFixed(3);
+  canvas.dataset.paginationStep = metrics.step.toFixed(3);
+  canvas.dataset.paginationOutWidth = metrics.outWidth.toFixed(3);
+  canvas.dataset.paginationWaveCenter = waveCenter.toFixed(3);
+  state.paginationLeft.length = metrics.count;
+  state.paginationWidth.length = metrics.count;
+  state.paginationOpacity.length = metrics.count;
+
+  for (let index = 0; index < metrics.count; index += 1) {
+    const closedX = metrics.left + index * metrics.step;
+    let openX = metrics.openLeft + index * metrics.step;
+    if (index < openTick) openX -= metrics.letterSpace;
+    if (index > openTick) openX += metrics.activeWidth + metrics.letterSpace;
+    const targetX = mix(closedX, openX, shapeOpen);
+    const distance = Math.abs(index - waveCenter);
+    const hover = Math.max(0, 1 - Math.abs(index - hoverVisual));
+    const open = index === openTick ? shapeOpen : 0;
+    const targetWidth = mix(metrics.outWidth, index === openTick ? metrics.activeWidth : metrics.outWidth, shapeOpen);
+    const baseOpacity = isProjectSurface ? 0 : HOME_PAGINATION_BASE_OPACITY;
+    const hoverOpacity = hover * (isProjectSurface ? 1 : 0.6) * hoverTarget;
+    const targetOpacity = clamp(baseOpacity + hoverOpacity, 0, 1);
+    const wave = distance < 6 ? easeIo2(1 - distance / 6) * latencyLift : 0;
+
+    if (!Number.isFinite(state.paginationLeft[index])) state.paginationLeft[index] = targetX;
+    if (!Number.isFinite(state.paginationWidth[index])) state.paginationWidth[index] = targetWidth;
+    if (!Number.isFinite(state.paginationOpacity[index])) state.paginationOpacity[index] = targetOpacity;
+
+    state.paginationLeft[index] = damp(state.paginationLeft[index], targetX, 0.1);
+    state.paginationWidth[index] = damp(state.paginationWidth[index], targetWidth, 0.1);
+    const opacityEase = targetOpacity > state.paginationOpacity[index] ? 0.25 : 0.06;
+    state.paginationOpacity[index] = damp(state.paginationOpacity[index], targetOpacity, opacityEase);
+
+    const tickHeight = state.paginationHeight + wave;
+    const y = state.paginationTop + (metrics.height - state.paginationHeight) - wave * 0.5;
+    const opacity = state.paginationOpacity[index] * alpha;
+
+    ctx.strokeStyle = `rgba(${ink[0]},${ink[1]},${ink[2]},${opacity})`;
+    ctx.beginPath();
+    ctx.rect(
+      state.paginationLeft[index] * dpr,
+      y * dpr,
+      state.paginationWidth[index] * dpr,
+      tickHeight * dpr,
+    );
+    ctx.stroke();
+  }
+}
+
+function getPaginationMetrics() {
+  const photoCount = Math.max(state.photos.length, 1);
+  const count = Math.max(photoCount, 30);
+  const compact = window.innerWidth <= 760;
+  const gapX = compact ? 5 : 8;
+  const height = 14;
+  const fontSize = compact ? 11 : 12;
+  const top = compact ? 44 : 49;
+  const openHeight = height * 0.5;
+  const activeWidth = height * (16 / 9);
+  const outWidth = 1 / PAGINATION_DPR;
+  const strokeWidth = 1;
+  const step = gapX + outWidth;
+  const left = (window.innerWidth - count * gapX) * 0.5;
+  const letterSpace = 4 * gapX;
+  const openLeft = left - activeWidth * 0.5 - gapX * 0.5 + strokeWidth;
+  const openTop = top + height - openHeight;
+  return { activeWidth, count, fontSize, gapX, height, left, letterSpace, openHeight, openLeft, openTop, outWidth, photoCount, step, strokeWidth, top };
+}
+
+function paginationSlotForPhoto(photoIndex) {
+  const photoCount = Math.max(state.photos.length, 1);
+  const count = Math.max(photoCount, 30);
+  if (photoCount <= 1 || count <= 1) return 0;
+  const clamped = clamp(photoIndex, 0, photoCount - 1);
+  return clamp(Math.round((clamped / (photoCount - 1)) * (count - 1)), 0, count - 1);
+}
+
+function photoIndexForPaginationSlot(slotIndex) {
+  const photoCount = Math.max(state.photos.length, 1);
+  const count = Math.max(photoCount, 30);
+  if (photoCount <= 1 || count <= 1) return 0;
+  const clamped = clamp(slotIndex, 0, count - 1);
+  return clamp(Math.round((clamped / (count - 1)) * (photoCount - 1)), 0, photoCount - 1);
+}
+
+function getPaginationActiveCenter() {
+  const metrics = getPaginationMetrics();
+  const activeTick = paginationSlotForPhoto(state.activeIndex);
+  const x = metrics.openLeft + activeTick * metrics.step;
+  return x + metrics.activeWidth * 0.5;
+}
+
+function updateMotionLatency() {
+  const metrics = getReferenceMetrics();
+  const isIndexSurface = state.mode === VIEW.index || state.mode === VIEW.loading;
+  const isDetailSurface = state.mode === VIEW.detail;
+  const targetPx = state.targetScroll / metrics.pxToWorld;
+  const latencyLerp = isDetailSurface ? 0.3 : state.mode === VIEW.work ? 0.07 : 0.08;
+
+  if (!Number.isFinite(state.scrollLatencyPx)) state.scrollLatencyPx = targetPx;
+  state.scrollLatencyPx = damp(state.scrollLatencyPx, targetPx, latencyLerp);
+
+  const rawLag = isIndexSurface ? targetPx - state.scrollLatencyPx : 0;
+  state.motionLagPx += (rawLag - state.motionLagPx) * latencyLerp;
+  state.scrollLagPx = state.motionLagPx;
+
+  const curveLimit = isIndexSurface ? 1 : 0.6;
+  const rotateLimit = isIndexSurface ? 1.7 : 2;
+  state.curveLatency = Math.min(Math.abs(state.motionLagPx) / (500 / curveLimit), curveLimit);
+  state.rotateLatency = clamp(state.motionLagPx / (500 / rotateLimit), -rotateLimit, rotateLimit);
+}
+
+function layoutPlane(mesh, elapsed) {
+  const { index, uniforms } = mesh.userData;
+  const metrics = getReferenceMetrics();
+  const planeMode = getPlaneSourceMode();
+  const isAboutPlane = state.mode === VIEW.about;
+  const step = metrics.outGapWorld;
+  const pxToWorld = metrics.pxToWorld;
+  const scrollPx = state.scroll / pxToWorld;
+  const visibleIndex = state.hoverIndex >= 0 && state.mode === VIEW.index ? state.hoverIndex : state.activeIndex;
+  const activeDistance = Math.abs(index - visibleIndex);
+  const detailDistance = index - state.activeIndex;
+  const intro = state.mode === VIEW.index ? state.homeIntro : 0;
+  const homeHover = state.mode === VIEW.index && state.hoverIndex === index ? 1 : 0;
+  const detailHover = state.mode === VIEW.detail && state.hoverIndex === index && index !== state.activeIndex ? 1 : 0;
+  const loadingAlpha = state.mode === VIEW.loading || state.mode === VIEW.studio || state.mode === VIEW.about ? 0 : 1;
+  const activePhoto = state.photos[state.activeIndex] || mesh.userData.photo;
+  const activeMultiply = activePhoto?.multiply ?? 1;
+  const activeInOverLight = activePhoto?.inOverLight ?? 0.7;
+  const aboutOutSpreadPx = isAboutPlane && planeMode === VIEW.index
+    ? metrics.outGapPx * (index - state.activeIndex) * 0.2
+    : 0;
+  const outRectPx = {
+    x: metrics.out.x + metrics.outGapPx * index - scrollPx + aboutOutSpreadPx,
+    y: metrics.out.y,
+    w: metrics.out.w,
+    h: metrics.out.h,
+  };
+  const introRectPx = {
+    ...outRectPx,
+    x: metrics.winW + metrics.outGapPx * index * 3 - scrollPx,
+  };
+  const indexRect = pixelRectToWorld(
+    {
+      x: mix(outRectPx.x, introRectPx.x, intro),
+      y: outRectPx.y,
+      w: outRectPx.w,
+      h: outRectPx.h,
+    },
+    metrics,
+  );
+
+  const detailLarge = index === state.activeIndex ? 1 : 0;
+  const detailSide = Math.abs(detailDistance) === 1 ? 1 : 0;
+  const detailScrollOffsetPx =
+    planeMode === VIEW.detail || planeMode === VIEW.work || state.detailMix > 0.01
+      ? (state.targetScroll - state.scroll) / pxToWorld
+      : 0;
+  const detailRectPx = referenceModeInRect(metrics, detailDistance, isAboutPlane && planeMode === VIEW.detail);
+  detailRectPx.x += detailScrollOffsetPx;
+  const detailRect = pixelRectToWorld(detailRectPx, metrics);
+
+  const indexTarget = {
+    alpha: loadingAlpha * clamp(1 - intro * 0.22, 0.03, 1),
+    color: homeHover,
+    height: indexRect.h,
+    scale: 0,
+    width: indexRect.w,
+    x: indexRect.x,
+    y: indexRect.y,
+    z: -activeDistance * 0.002,
+  };
+
+  const detailTarget = {
+    alpha: loadingAlpha,
+    color: detailLarge ? 1 : detailHover * activeInOverLight,
+    height: detailRect.h,
+    scale: isAboutPlane && planeMode === VIEW.detail ? 0.15 : 0,
+    width: detailRect.w,
+    x: detailRect.x,
+    y: detailRect.y,
+    z: detailLarge ? 0.05 : detailSide ? -0.02 : -0.12,
+  };
+
+  const planeDetailTarget = planeMode === VIEW.detail || planeMode === VIEW.work ? 1 : 0;
+  const planeWorkTarget = planeMode === VIEW.work ? 1 : 0;
+  const t = planeDetailTarget;
+  const workT = planeWorkTarget;
+  const baseTarget = {
+    alpha: mix(indexTarget.alpha, detailTarget.alpha, t),
+    color: mix(indexTarget.color, detailTarget.color, t),
+    height: mix(indexTarget.height, detailTarget.height, t),
+    scale: mix(0, detailTarget.scale, t),
+    width: mix(indexTarget.width, detailTarget.width, t),
+    x: mix(indexTarget.x, detailTarget.x, t),
+    y: mix(indexTarget.y, detailTarget.y, t),
+    z: mix(indexTarget.z, detailTarget.z, t),
+  };
+  const workRectPx = referenceModeWorkRect(metrics, detailDistance);
+  workRectPx.x += detailScrollOffsetPx;
+  const workRect = pixelRectToWorld(workRectPx, metrics);
+  const workPlaneAlpha = state.mode === VIEW.work && state.workIndex !== state.activeIndex ? 0 : loadingAlpha;
+  const workPlaneTarget = {
+    alpha: workPlaneAlpha,
+    color: detailLarge ? 1 : 0,
+    height: workRect.h,
+    scale: 0,
+    width: workRect.w,
+    x: workRect.x,
+    y: workRect.y,
+    z: detailLarge ? 0.08 : -0.16,
+  };
+  const target = {
+    alpha: mix(baseTarget.alpha, workPlaneTarget.alpha, workT),
+    color: mix(baseTarget.color, workPlaneTarget.color, workT),
+    height: mix(baseTarget.height, workPlaneTarget.height, workT),
+    scale: mix(baseTarget.scale, workPlaneTarget.scale, workT),
+    width: mix(baseTarget.width, workPlaneTarget.width, workT),
+    x: mix(baseTarget.x, workPlaneTarget.x, workT),
+    y: mix(baseTarget.y, workPlaneTarget.y, workT),
+    z: mix(baseTarget.z, workPlaneTarget.z, workT),
+  };
+
+  const detailEntryElapsed = state.detailEntryStartedAt ? performance.now() - state.detailEntryStartedAt : Infinity;
+  const detailExitElapsed = state.detailExitStartedAt ? performance.now() - state.detailExitStartedAt : Infinity;
+  const projectSwitchElapsed = state.projectSwitchStartedAt ? performance.now() - state.projectSwitchStartedAt : Infinity;
+  const earlyProjectSwitchGeometry = state.mode === VIEW.detail && projectSwitchElapsed < 180;
+  const earlyDetailEntryGeometry = state.mode === VIEW.detail && detailEntryElapsed < 180;
+  const earlyDetailExitGeometry = state.mode === VIEW.index && detailExitElapsed < 360;
+  const geometryEase = earlyProjectSwitchGeometry
+    ? DETAIL_SWITCH_EARLY_PLANE_EASE
+    : earlyDetailEntryGeometry
+      ? 0.05
+      : earlyDetailExitGeometry
+        ? DETAIL_EXIT_EARLY_PLANE_EASE
+        : 0.07;
+  const detachScrollFromPlaneX = planeMode === VIEW.detail || planeMode === VIEW.work;
+  if (detachScrollFromPlaneX) {
+    const detachedTargetX = target.x + state.scroll;
+    const detachedStartX = Number.isFinite(mesh.userData.detachedPlaneX)
+      ? mesh.userData.detachedPlaneX
+      : mesh.position.x + state.scroll;
+    mesh.userData.detachedPlaneX = damp(detachedStartX, detachedTargetX, geometryEase);
+    mesh.position.x = mesh.userData.detachedPlaneX - state.scroll;
+  } else {
+    mesh.position.x = damp(mesh.position.x, target.x, geometryEase);
+    mesh.userData.detachedPlaneX = mesh.position.x + state.scroll;
+  }
+  mesh.position.y = damp(mesh.position.y, target.y, geometryEase);
+  mesh.position.z = damp(mesh.position.z, target.z, geometryEase);
+  mesh.scale.x = damp(mesh.scale.x, target.width, geometryEase);
+  mesh.scale.y = damp(mesh.scale.y, target.height, geometryEase);
+  const rotateTarget = state.mode === VIEW.index ? clamp(state.rotateLatency * -0.4, -0.72, 0.72) : 0;
+  mesh.rotation.y = damp(mesh.rotation.y, rotateTarget, 0.1);
+
+  const alphaEase = target.alpha <= 0.001 ? 0.23 : 0.07;
+  uniforms.uAlpha.value = damp(uniforms.uAlpha.value, target.alpha, alphaEase);
+  uniforms.uColorMix.value = damp(uniforms.uColorMix.value, target.color, 0.1);
+  const curveTarget = clamp(state.curveLatency + state.switchPulse * 0.08 * (1 - t), 0, 1);
+  const radiusTarget = mix(metrics.curveRadiusWorld, 0.62, t);
+  const detailMultiply = detailLarge ? 0 : activeMultiply;
+  const workMultiply = detailLarge ? 0 : activeMultiply;
+  const multiplyTarget = mix(mix(0, detailMultiply, t), workMultiply, workT);
+  const detailPhotoY = 0;
+  const workPhotoY = detailLarge ? -0.1 : detailPhotoY;
+  const photoYTarget = mix(mix(0, detailPhotoY, t), workPhotoY, workT);
+  uniforms.uCurve.value = damp(uniforms.uCurve.value, curveTarget, 0.11);
+  uniforms.uCurveRadius.value = damp(uniforms.uCurveRadius.value, radiusTarget, 0.12);
+  uniforms.uDetail.value = damp(uniforms.uDetail.value, t, 0.08);
+  uniforms.uHover.value = damp(uniforms.uHover.value, homeHover, 0.12);
+  uniforms.uIntro.value = damp(uniforms.uIntro.value, intro, 0.18);
+  uniforms.uMouse.value.lerp(pointer, 0.08);
+  uniforms.uMultiply.value = damp(uniforms.uMultiply.value, multiplyTarget, 0.1);
+  uniforms.uPhotoY.value = damp(uniforms.uPhotoY.value, photoYTarget, 0.1);
+  uniforms.uTextureScale.value = damp(uniforms.uTextureScale.value, target.scale, 0.1);
+  const planeAspect = Math.max(0.01, mesh.scale.x / Math.max(mesh.scale.y, 0.01));
+  uniforms.uPlaneAspect.value = planeAspect;
+  const uvScale = getReferenceUvScale(uniforms.uImageAspect.value, planeAspect, uniforms.uTextureScale.value);
+  uniforms.uUvScale.value.set(uvScale.x, uvScale.y);
+  uniforms.uTime.value = elapsed + index * 0.071;
+  uniforms.uTransition.value = damp(uniforms.uTransition.value, state.transition, 0.1);
+  uniforms.uVelocity.value = damp(uniforms.uVelocity.value, state.velocity * 46, 0.08);
+  uniforms.uSwitch.value = damp(uniforms.uSwitch.value, state.switchPulse, 0.16);
+  uniforms.uSwitchDirection.value = damp(uniforms.uSwitchDirection.value, state.switchDirection, 0.22);
+  uniforms.uWorldToPx.value = metrics.worldToPx;
+
+  const currentPlaneRectPx = meshPixelRect(mesh, metrics);
+  const targetPlaneRectPx = worldPlanePixelRect(target.x, target.y, target.width, target.height, metrics);
+
+  if (index === state.activeIndex) {
+    canvas.dataset.activePlaneX = mesh.position.x.toFixed(4);
+    canvas.dataset.activePlaneTargetX = target.x.toFixed(4);
+    canvas.dataset.activePlaneAlpha = uniforms.uAlpha.value.toFixed(4);
+    canvas.dataset.activePlaneAlphaTarget = target.alpha.toFixed(4);
+    canvas.dataset.activePlaneCurve = uniforms.uCurve.value.toFixed(4);
+    canvas.dataset.activePlaneDetailMix = state.detailMix.toFixed(4);
+    canvas.dataset.activePlaneDetailTarget = planeDetailTarget.toFixed(1);
+    canvas.dataset.activePlaneLight = uniforms.uColorMix.value.toFixed(4);
+    canvas.dataset.activePlaneMultiply = uniforms.uMultiply.value.toFixed(4);
+    canvas.dataset.activePlanePhotoY = uniforms.uPhotoY.value.toFixed(4);
+    canvas.dataset.activePlanePhotoYTarget = photoYTarget.toFixed(4);
+    canvas.dataset.activePlaneRotateY = mesh.rotation.y.toFixed(4);
+    canvas.dataset.activePlaneTargetH = target.height.toFixed(4);
+    canvas.dataset.activePlaneTargetY = target.y.toFixed(4);
+    canvas.dataset.activePlaneTargetYPx = (metrics.winH * 0.5 - target.y * metrics.worldToPx - target.height * metrics.worldToPx * 0.5).toFixed(2);
+    canvas.dataset.activePlaneWorkMix = state.workMix.toFixed(4);
+    canvas.dataset.activePlaneWorkTarget = planeWorkTarget.toFixed(1);
+    canvas.dataset.activePlaneTextureScale = uniforms.uTextureScale.value.toFixed(4);
+    canvas.dataset.activePlaneTextureScaleTarget = target.scale.toFixed(4);
+    canvas.dataset.detailScrollOffsetPx = detailScrollOffsetPx.toFixed(2);
+    canvas.dataset.planeSourceMode = planeMode;
+    writeCanvasRectDataset('activePlane', currentPlaneRectPx);
+    writeCanvasRectDataset('activePlaneTarget', targetPlaneRectPx);
+  }
+  if (index === state.activeIndex + 1) {
+    const targetWidthPx = target.width * metrics.worldToPx;
+    canvas.dataset.nextPlaneAlphaTarget = target.alpha.toFixed(4);
+    canvas.dataset.nextPlaneTargetLeftPx = (
+      metrics.winW * 0.5 + target.x * metrics.worldToPx - targetWidthPx * 0.5
+    ).toFixed(2);
+    canvas.dataset.nextPlaneTargetWidthPx = targetWidthPx.toFixed(2);
+  }
+  if (index === state.exitingProjectIndex) {
+    canvas.dataset.exitingPlaneX = mesh.position.x.toFixed(4);
+    canvas.dataset.exitingPlaneTargetX = target.x.toFixed(4);
+    writeCanvasRectDataset('exitingPlane', currentPlaneRectPx);
+    writeCanvasRectDataset('exitingPlaneTarget', targetPlaneRectPx);
+  }
+}
+
+function getPlaneSourceMode() {
+  if (state.mode !== VIEW.about) return state.mode;
+  return state.aboutReturnMode || VIEW.index;
+}
+
+function getReferenceUvScale(imageAspect, planeAspect, textureScale = 0) {
+  const safeImage = Math.max(0.01, imageAspect || 1);
+  const safePlane = Math.max(0.01, planeAspect || 1);
+  const amount = Math.max(1, 1 + textureScale);
+  return {
+    x: Math.min(safePlane / safeImage, 1) / amount,
+    y: Math.min(safeImage / safePlane, 1) / amount,
+  };
+}
+
+function updateHoverFromPointer() {
+  const nextHover = getReferenceHoverIndex();
+  if (nextHover !== state.hoverIndex) {
+    state.hoverIndex = nextHover;
+  }
+}
+
+function getReferenceHoverIndex() {
+  if (state.mode !== VIEW.index && state.mode !== VIEW.detail) return -1;
+  const metrics = getReferenceMetrics();
+  const cursorX = pointer.x * metrics.winW;
+  const cursorY = (1 - pointer.y) * metrics.winH;
+  let hover = -1;
+
+  for (const mesh of planes) {
+    const { index, uniforms } = mesh.userData;
+    if (state.mode === VIEW.detail && index === state.activeIndex) continue;
+    if (uniforms.uAlpha.value <= 0.08) continue;
+    const rect = meshPixelRect(mesh, metrics);
+    const insideX = cursorX >= rect.left && cursorX <= rect.right;
+    const insideY = cursorY >= rect.top && cursorY <= rect.bottom;
+    if (insideX && insideY) hover = index;
+  }
+
+  return hover;
+}
+
+function meshPixelRect(mesh, metrics) {
+  const halfW = mesh.scale.x * 0.5;
+  const halfH = mesh.scale.y * 0.5;
+  return {
+    bottom: metrics.winH * 0.5 - (mesh.position.y - halfH) * metrics.worldToPx,
+    height: mesh.scale.y * metrics.worldToPx,
+    left: metrics.winW * 0.5 + (mesh.position.x - halfW) * metrics.worldToPx,
+    right: metrics.winW * 0.5 + (mesh.position.x + halfW) * metrics.worldToPx,
+    top: metrics.winH * 0.5 - (mesh.position.y + halfH) * metrics.worldToPx,
+    width: mesh.scale.x * metrics.worldToPx,
+  };
+}
+
+function worldPlanePixelRect(x, y, width, height, metrics) {
+  const halfW = width * 0.5;
+  const halfH = height * 0.5;
+  return {
+    bottom: metrics.winH * 0.5 - (y - halfH) * metrics.worldToPx,
+    height: height * metrics.worldToPx,
+    left: metrics.winW * 0.5 + (x - halfW) * metrics.worldToPx,
+    right: metrics.winW * 0.5 + (x + halfW) * metrics.worldToPx,
+    top: metrics.winH * 0.5 - (y + halfH) * metrics.worldToPx,
+    width: width * metrics.worldToPx,
+  };
+}
+
+function writeCanvasRectDataset(prefix, rect) {
+  canvas.dataset[`${prefix}BottomPx`] = rect.bottom.toFixed(2);
+  canvas.dataset[`${prefix}HeightPx`] = rect.height.toFixed(2);
+  canvas.dataset[`${prefix}LeftPx`] = rect.left.toFixed(2);
+  canvas.dataset[`${prefix}RightPx`] = rect.right.toFixed(2);
+  canvas.dataset[`${prefix}TopPx`] = rect.top.toFixed(2);
+  canvas.dataset[`${prefix}WidthPx`] = rect.width.toFixed(2);
+}
+
+function estimatePointerIndex() {
+  if (state.mode !== VIEW.index) return -1;
+  const metrics = getReferenceMetrics();
+  const step = metrics.outGapWorld;
+  const worldX = (pointer.x - 0.5) * viewport.width;
+  const worldY = (pointer.y - 0.5) * viewport.height;
+  const index = Math.round((worldX + state.scroll) / step);
+  if (index < 0 || index >= state.photos.length) return -1;
+  const stripX = index * step - state.scroll;
+  const stripWidth = metrics.out.w * metrics.pxToWorld;
+  if (Math.abs(worldX - stripX) > stripWidth * 0.95) return -1;
+  const stripHeight = metrics.out.h * metrics.pxToWorld;
+  if (Math.abs(worldY) > stripHeight * 0.55) return -1;
+  return index;
+}
+
+function updateUi() {
+  const photo = state.photos[state.activeIndex];
+  const current = String(state.activeIndex + 1).padStart(3, '0');
+  const total = String(state.photos.length).padStart(3, '0');
+  const palette = photo?.palette || createPhotoPalette([188, 148, 57], 0);
+  const photoRgb = palette.photo;
+  const usesProjectPalette = state.mode === VIEW.detail || state.mode === VIEW.work;
+
+  state.surfaceRgbTarget = (usesProjectPalette ? palette.surface : BASE_SURFACE_RGB).slice();
+  state.textRgbTarget = (usesProjectPalette ? palette.text : BASE_TEXT_RGB).slice();
+  state.workRgbTarget = (state.mode === VIEW.work ? palette.work : BASE_WORK_RGB).slice();
+
+  if (galleryEls.title) galleryEls.title.textContent = photo?.title || '念念';
+  if (galleryEls.current) galleryEls.current.textContent = current;
+  if (galleryEls.total) galleryEls.total.textContent = total;
+  if (galleryEls.aboutTotal) galleryEls.aboutTotal.textContent = `${total} PHOTOS`;
+  if (galleryEls.frame) galleryEls.frame.textContent = `${current} / ${total}`;
+  const currentShort = String(state.activeIndex + 1).padStart(2, '0');
+  const previousIndex = state.exitingProjectIndex >= 0 ? state.exitingProjectIndex : state.activeIndex;
+  const previousShort = String(previousIndex + 1).padStart(2, '0');
+  const previousFrame = String(previousIndex + 1).padStart(3, '0');
+  const totalShort = String(state.photos.length).padStart(2, '0');
+  if (galleryEls.shadowCurrent) galleryEls.shadowCurrent.textContent = currentShort;
+  if (galleryEls.shadowCurrentPrev) galleryEls.shadowCurrentPrev.textContent = previousShort;
+  if (galleryEls.shadowTotal) galleryEls.shadowTotal.textContent = totalShort;
+  if (galleryEls.shadowTotalPrev) galleryEls.shadowTotalPrev.textContent = totalShort;
+  if (galleryEls.shadowFrame) galleryEls.shadowFrame.textContent = `${current} / ${total}`;
+  if (galleryEls.shadowFramePrev) galleryEls.shadowFramePrev.textContent = `${previousFrame} / ${total}`;
+  if (galleryEls.shadowTitle) {
+    const title = shadowTitleFor(photo, state.activeIndex);
+    updateTitleLayer(galleryEls.shadowTitle, title);
+  }
+  if (galleryEls.shadowTitlePrev) {
+    const previousIndex = state.exitingProjectIndex >= 0 ? state.exitingProjectIndex : state.activeIndex;
+    const previousTitle = shadowTitleFor(state.photos[previousIndex] || photo, previousIndex);
+    updateTitleLayer(galleryEls.shadowTitlePrev, previousTitle);
+  }
+  if (galleryEls.detailRail) {
+    updateRailTargets();
+  }
+  if (galleryEls.shell) {
+    galleryEls.shell.style.setProperty('--switch-direction', String(state.switchDirection || 1));
+    galleryEls.shell.classList.toggle('is-switch-forward', (state.switchDirection || 1) >= 0);
+    galleryEls.shell.classList.toggle('is-switch-backward', (state.switchDirection || 1) < 0);
+    galleryEls.shell.classList.toggle('has-work-visit', Boolean(getWorkVisitUrl()));
+    galleryEls.shell.dataset.paletteMode = usesProjectPalette ? state.mode : 'base';
+    galleryEls.shell.style.setProperty('--photo-rgb', photoRgb.join(', '));
+  }
+  planes.forEach((mesh) => {
+    const accent = mesh.userData.photo.palette?.text || state.textRgbTarget;
+    mesh.userData.uniforms.uAccent.value.copy(threeColorFromRgb(accent));
+  });
+  if (galleryEls.projectPagination) {
+    const activeCenter = getPaginationActiveCenter();
+    galleryEls.projectPagination.style.setProperty('--project-pagination-left', `${activeCenter}px`);
+  }
+  const visibleWorkIndex = state.mode === VIEW.work ? state.workIndex : state.activeIndex;
+  galleryEls.workLayers?.forEach((layer, index) => {
+    layer.classList.toggle('is-active', index === visibleWorkIndex);
+    layer.classList.toggle('is-exiting', index === state.exitingWorkIndex);
+  });
+  if (galleryEls.visitLink) {
+    const hasWorkVisit = Boolean(getWorkVisitUrl());
+    const isHiddenWorkVisit = state.mode === VIEW.work && !hasWorkVisit;
+    const label = state.mode === VIEW.work ? '查看当前照片' : '进入作品视图';
+    galleryEls.visitLink.setAttribute('aria-label', label);
+    galleryEls.visitLink.title = label;
+    galleryEls.visitLink.tabIndex = isHiddenWorkVisit ? -1 : 0;
+    galleryEls.visitLink.setAttribute('aria-hidden', String(isHiddenWorkVisit));
+  }
+  if (galleryEls.studioPanel) {
+    const isStudio = state.mode === VIEW.studio;
+    galleryEls.studioPanel.setAttribute('aria-hidden', String(!isStudio));
+    galleryEls.studioPanel.toggleAttribute('inert', !isStudio);
+  }
+  if (galleryEls.aboutPanel) {
+    const isAbout = state.mode === VIEW.about;
+    galleryEls.aboutPanel.setAttribute('aria-hidden', String(!isAbout));
+    galleryEls.aboutPanel.toggleAttribute('inert', !isAbout);
+  }
+  if (galleryEls.aboutLabel) {
+    const nextLabel = state.mode === VIEW.about ? 'CLOSE' : 'ABOUT';
+    if (galleryEls.aboutLabel.dataset.label !== nextLabel) {
+      galleryEls.aboutLabel.dataset.label = nextLabel;
+      galleryEls.aboutLabel.innerHTML = splitLabelHtml(nextLabel);
+    }
+  }
+
+  galleryEls.thumbs?.forEach((button, index) => {
+    const workOrder = getWorkMediaOrder(index);
+    const isWorkMedia = state.mode === VIEW.work && workOrder >= 0;
+    button.classList.toggle('is-active', index === visibleWorkIndex);
+    button.classList.toggle('is-work-media', isWorkMedia);
+    button.dataset.workOrder = String(workOrder);
+    button.style.order = String(index);
+    button.tabIndex = state.mode === VIEW.work ? (isWorkMedia ? 0 : -1) : 0;
+    button.setAttribute('aria-hidden', String(state.mode === VIEW.work && !isWorkMedia));
+  });
+  if (state.mode === VIEW.detail || state.mode === VIEW.work) {
+    warmWorkMediaImages(state.activeIndex);
+  }
+  galleryEls.meter?.forEach((tick, index) => {
+    tick.classList.toggle('is-active', index <= state.activeIndex);
+  });
+}
+
+function updateTitleLayer(root, title) {
+  const lines = root.querySelectorAll('.title-line');
+  if (lines[0] && lines[0].dataset.text !== title[0]) {
+    lines[0].dataset.text = title[0];
+    lines[0].innerHTML = titleCharsHtml(title[0], 0);
+    scheduleTitleLayout();
+  }
+  if (lines[1] && lines[1].dataset.text !== title[1]) {
+    lines[1].dataset.text = title[1];
+    lines[1].innerHTML = titleCharsHtml(title[1], 1);
+    scheduleTitleLayout();
+  }
+}
+
+function parseRgbColor(color) {
+  if (!color) return null;
+  const match = String(color).match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+  if (!match) return null;
+  return match.slice(1, 4).map((value) => clamp(Number(value), 0, 255));
+}
+
+function createPhotoPalette(rgb, index = 0) {
+  const referenceColor = REFERENCE_PROJECT_COLORS[index % REFERENCE_PROJECT_COLORS.length];
+  if (referenceColor) {
+    return {
+      photo: rgb.map((value) => Math.round(value)),
+      surface: referenceColor.bg.slice(),
+      text: referenceColor.text.slice(),
+      work: referenceColor.work.slice(),
+    };
+  }
+
+  const projectHues = [0.12, 0.43, 0.02, 0.58, 0.75, 0.34, 0.91, 0.5];
+  if (index === 0) {
+    const surface = [238, 241, 234];
+    return {
+      photo: rgb.map((value) => Math.round(value)),
+      surface,
+      text: BASE_TEXT_RGB.slice(),
+      work: photoWorkColorFor(rgb, surface),
+    };
+  }
+
+  const [h, s, l] = rgbToHsl(rgb);
+  const sourceHue = s > 0.11 ? h : projectHues[index % projectHues.length];
+  const shift = ((index % 5) - 2) * 0.018;
+  const surfaceS = clamp(s > 0.11 ? s * 1.55 + 0.14 : 0.34, 0.28, 0.62);
+  const surfaceL = clamp(0.58 + ((index + 1) % 4) * 0.035 + (l - 0.5) * 0.08, 0.54, 0.72);
+  let surface = hslToRgb((sourceHue + shift + 1) % 1, surfaceS, surfaceL);
+  surface = mixRgb(surface, rgb, 0.08);
+  const text = luminance(surface) > 0.76 && surfaceS < 0.26 ? BASE_TEXT_RGB.slice() : [252, 241, 204];
+
+  return {
+    photo: rgb.map((value) => Math.round(value)),
+    surface,
+    text,
+    work: photoWorkColorFor(rgb, surface),
+  };
+}
+
+function photoWorkColorFor(rgb, surface) {
+  const [, saturation] = rgbToHsl(rgb);
+  const mixAmount = saturation < 0.12 ? 0.28 : 0.18;
+  let work = mixRgb(rgb, surface, mixAmount);
+  if (luminance(work) > 0.82) {
+    work = mixRgb(work, [188, 190, 184], 0.32);
+  }
+  if (luminance(work) < 0.16) {
+    work = mixRgb(work, surface, 0.22);
+  }
+  return work;
+}
+
+function photoMultiplyFor(palette) {
+  const photo = palette?.photo || [188, 148, 57];
+  const surface = palette?.surface || photo;
+  const [, saturation] = rgbToHsl(photo);
+  const photoLum = luminance(photo);
+  const surfaceLum = luminance(surface);
+  const needsSofterMultiply = saturation < 0.1 || photoLum < 0.42 || surfaceLum < 0.2 || surfaceLum > 0.78;
+  return needsSofterMultiply ? 0.75 : 1;
+}
+
+function photoInOverLightFor(palette) {
+  const photo = palette?.photo || [188, 148, 57];
+  const surface = palette?.surface || photo;
+  const [, saturation] = rgbToHsl(photo);
+  const surfaceLum = luminance(surface);
+  if (surfaceLum > 0.78) return 1;
+  if (surfaceLum < 0.22) return 0.8;
+  if (saturation < 0.1) return 0.7;
+  return surfaceLum > 0.62 ? 0.5 : 0.6;
+}
+
+function updatePaletteMotion() {
+  for (let index = 0; index < 3; index += 1) {
+    state.surfaceRgb[index] = damp(state.surfaceRgb[index], state.surfaceRgbTarget[index], 0.055);
+    state.textRgb[index] = damp(state.textRgb[index], state.textRgbTarget[index], 0.07);
+    state.workRgb[index] = damp(state.workRgb[index], state.workRgbTarget[index], 0.065);
+  }
+
+  if (galleryEls.shell) {
+    const textVar = rgbVar(state.textRgb);
+    galleryEls.shell.style.setProperty('--surface-rgb', rgbVar(state.surfaceRgb));
+    galleryEls.shell.style.setProperty('--text-rgb', textVar);
+    galleryEls.shell.style.setProperty('--work-rgb', rgbVar(state.workRgb));
+    galleryEls.shell.style.setProperty('--gold', `rgb(${textVar})`);
+    galleryEls.shell.style.setProperty('--paper-line', `rgba(${textVar}, 0.28)`);
+  }
+}
+
+function rgbCss(rgb) {
+  return `rgb(${rgb.map((value) => Math.round(value)).join(', ')})`;
+}
+
+function rgbVar(rgb) {
+  return rgb.map((value) => Math.round(clamp(value, 0, 255))).join(', ');
+}
+
+function threeColorFromRgb(rgb) {
+  return new THREE.Color(
+    clamp(rgb[0] / 255, 0, 1),
+    clamp(rgb[1] / 255, 0, 1),
+    clamp(rgb[2] / 255, 0, 1),
+  );
+}
+
+function mixRgb(a, b, t) {
+  return a.map((value, index) => Math.round(mix(value, b[index], t)));
+}
+
+function luminance(rgb) {
+  return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+}
+
+function rgbToHsl(rgb) {
+  const r = rgb[0] / 255;
+  const g = rgb[1] / 255;
+  const b = rgb[2] / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function hslToRgb(h, s, l) {
+  if (s === 0) {
+    const value = Math.round(l * 255);
+    return [value, value, value];
+  }
+  const hue2rgb = (p, q, t) => {
+    let next = t;
+    if (next < 0) next += 1;
+    if (next > 1) next -= 1;
+    if (next < 1 / 6) return p + (q - p) * 6 * next;
+    if (next < 1 / 2) return q;
+    if (next < 2 / 3) return p + (q - p) * (2 / 3 - next) * 6;
+    return p;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return [
+    Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+    Math.round(hue2rgb(p, q, h) * 255),
+    Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+  ];
+}
+
+function scheduleTitleLayout() {
+  window.cancelAnimationFrame(titleLayoutRaf);
+  titleLayoutRaf = window.requestAnimationFrame(updateTitleLetterPositions);
+}
+
+function updateTitleLetterPositions() {
+  const roots = [galleryEls.shadowTitle, galleryEls.shadowTitlePrev].filter(Boolean);
+  roots.forEach((root) => {
+    const titleWidth = root.getBoundingClientRect().width;
+    if (!titleWidth) return;
+
+    const lines = [...root.querySelectorAll('.title-line')];
+    lines.forEach((line, lineIndex) => {
+      const chars = [...line.querySelectorAll('.title-char')];
+      if (!chars.length) return;
+
+      const homeData = getTitleHomePositions(lineIndex, chars.length);
+      const hasHomeData = homeData.length === chars.length;
+      const spacingData = getTitleWorkSpacing(lineIndex, chars.length);
+      const pads = chars.map((char) => {
+        const inner = char.querySelector('span');
+        return inner ? parseFloat(getComputedStyle(inner).paddingRight) || 0 : 0;
+      });
+      const widths = chars.map((char, index) => {
+        const spacing = Number(char.dataset.workSpacing || spacingData[index] || 0);
+        const rawWidth = char.getBoundingClientRect().width;
+        return Math.max(0, rawWidth - 2 * pads[index] * (1 - spacing));
+      });
+      let workX = 0;
+      let previousHomeX = 0;
+
+      chars.forEach((char, index) => {
+        const fallbackHome = chars.length > 1 ? (index / (chars.length - 1)) * 86 + 4 : 0;
+        const spacing = Number(char.dataset.workSpacing || spacingData[index] || 0);
+        const width = widths[index] || 0;
+        const previousWidth = widths[index - 1] || 0;
+        let homeX = hasHomeData ? ((homeData[index] ?? fallbackHome) * titleWidth) / 100 : workX;
+
+        if (index > 0) {
+          homeX = Math.max(homeX, previousHomeX + previousWidth);
+        }
+        if (index === chars.length - 1) {
+          homeX = Math.min(homeX, titleWidth - width * 0.92);
+        }
+
+        char.style.setProperty('--title-home-x', `${Math.round(homeX * 100) / 100}px`);
+        char.style.setProperty('--title-work-x', `${Math.round(workX * 100) / 100}px`);
+        char.style.setProperty('--title-move-delay', `${index * 10}ms`);
+
+        previousHomeX = homeX;
+        workX += width * (1 + spacing);
+      });
+    });
+  });
+}
+
+function setActive(index, snap = false) {
+  if (!state.photos.length) return;
+  const nextIndex = clamp(index, 0, state.photos.length - 1);
+  const previousIndex = state.activeIndex;
+  state.activeIndex = nextIndex;
+  if (nextIndex !== previousIndex) {
+    state.exitingProjectIndex = previousIndex;
+    state.switchDirection = Math.sign(nextIndex - previousIndex) || 1;
+    startPaginationDigitMotion(previousIndex, nextIndex);
+    state.switchPulse = 1;
+    if (state.mode === VIEW.detail) {
+      state.projectSwitchStartedAt = performance.now();
+    }
+    pulseProjectSwitch();
+    if (state.mode !== VIEW.work) state.workIndex = nextIndex;
+  }
+  state.hoverIndex = -1;
+  state.transition = Math.max(state.transition, 0.42);
+  state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
+  if (snap && state.mode === VIEW.index) state.scroll += (state.targetScroll - state.scroll) * 0.42;
+  updateUi();
+  if (nextIndex !== previousIndex && (state.mode === VIEW.detail || state.mode === VIEW.work)) {
+    state.textRgb = state.textRgbTarget.slice();
+  }
+  if (state.mode === VIEW.detail || state.mode === VIEW.work) {
+    syncRouteForMode(state.mode);
+  }
+}
+
+function setWorkIndex(index) {
+  if (!state.photos.length) return;
+  const nextIndex = clamp(index, 0, state.photos.length - 1);
+  if (state.mode === VIEW.work && getWorkMediaOrder(nextIndex) < 0) return;
+  const previousIndex = state.workIndex;
+  if (nextIndex === previousIndex) return;
+  const media = getWorkMediaIndices();
+  const previousOrder = media.indexOf(previousIndex);
+  const nextOrder = media.indexOf(nextIndex);
+  const mediaDirection =
+    previousOrder >= 0 && nextOrder >= 0 ? Math.sign(nextOrder - previousOrder) : 0;
+  const direction = mediaDirection || Math.sign(nextIndex - previousIndex) || 1;
+  state.exitingWorkIndex = previousIndex;
+  prepareWorkLayerSwitch(previousIndex, nextIndex, direction);
+  state.workIndex = nextIndex;
+  state.switchDirection = direction;
+  state.switchPulse = 1;
+  state.railActiveLerp = WORK_SWITCH_FRAME_LERP;
+  updateUi();
+  pulseWorkMedia();
+}
+
+function setMode(mode, options = {}) {
+  const { updateRoute = true } = options;
+  const previousMode = state.mode;
+  let shouldPrimeWorkMotion = false;
+  let preserveWorkFx = false;
+  if (mode === VIEW.about && previousMode !== VIEW.about) {
+    state.aboutReturnMode =
+      previousMode && previousMode !== VIEW.loading && previousMode !== VIEW.studio ? previousMode : VIEW.index;
+  }
+  state.mode = mode;
+  state.hoverIndex = -1;
+  if (previousMode !== mode) {
+    state.transition = 1;
+    galleryEls.shell?.classList.add('is-transitioning');
+    window.clearTimeout(transitionTimer);
+    transitionTimer = window.setTimeout(() => {
+      galleryEls.shell?.classList.remove('is-transitioning');
+    }, 860);
+  }
+  if (mode === VIEW.index || mode === VIEW.loading || (mode === VIEW.detail && previousMode !== VIEW.work)) {
+    galleryEls.shell?.classList.remove('is-title-mode-settled');
+  }
+  if (mode === VIEW.detail && (previousMode === VIEW.index || previousMode === VIEW.loading)) {
+    state.detailEntryStartedAt = performance.now();
+    startPaginationDigitMotion(state.activeIndex, state.activeIndex, { out: true });
+  } else if (mode !== VIEW.detail) {
+    state.detailEntryStartedAt = 0;
+  }
+  if (
+    (previousMode === VIEW.detail && mode === VIEW.work) ||
+    (previousMode === VIEW.work && mode === VIEW.detail)
+  ) {
+    pulseTitleModeMove();
+  }
+  if ((previousMode === VIEW.detail || previousMode === VIEW.work) && mode === VIEW.index) {
+    state.detailExitStartedAt = performance.now();
+    startPaginationDigitExit(state.activeIndex);
+  } else if (mode !== VIEW.index) {
+    state.detailExitStartedAt = 0;
+  }
+  if (previousMode === VIEW.loading && mode === VIEW.index) {
+    state.homeIntro = 1;
+    galleryEls.shell?.classList.add('is-home-intro');
+    window.setTimeout(() => {
+      galleryEls.shell?.classList.remove('is-home-intro');
+    }, 1500);
+  }
+  if (mode === VIEW.work && previousMode !== VIEW.work) {
+    const media = getWorkMediaIndices();
+    if (previousMode !== VIEW.about || !media.includes(state.workIndex)) {
+      state.workIndex = media[0] ?? state.activeIndex;
+    }
+    preserveWorkFx = previousMode === VIEW.about && state.aboutReturnMode === VIEW.work;
+    shouldPrimeWorkMotion = true;
+  }
+  if (mode !== VIEW.work && previousMode === VIEW.work) {
+    state.exitingWorkIndex = -1;
+    galleryEls.shell?.classList.remove('is-work-entry');
+    window.clearTimeout(workEntryTimer);
+    hideWorkBgMotion();
+    hideWorkThumbMotion();
+  }
+  galleryEls.shell?.setAttribute('data-mode', mode);
+  galleryEls.shell?.classList.remove('is-about', 'is-loading', 'is-index', 'is-detail', 'is-studio', 'is-work');
+  galleryEls.shell?.classList.add(`is-${mode}`);
+  updateUi();
+  if (shouldPrimeWorkMotion) {
+    galleryEls.shell?.classList.toggle('is-work-entry', !preserveWorkFx);
+    window.clearTimeout(workEntryTimer);
+    if (!preserveWorkFx) {
+      workEntryTimer = window.setTimeout(() => {
+        galleryEls.shell?.classList.remove('is-work-entry');
+      }, 1200);
+    }
+    primeWorkLayerMotion({ preserveImages: preserveWorkFx });
+    primeWorkRailMotion();
+    primeWorkThumbMotion({ preserveVisible: preserveWorkFx });
+  }
+  if (mode === VIEW.index) {
+    state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
+  }
+  if (updateRoute) {
+    syncRouteForMode(mode);
+  }
+}
+
+function closeAbout() {
+  const returnMode = state.aboutReturnMode || VIEW.index;
+  setMode(returnMode === VIEW.about ? VIEW.index : returnMode);
+}
+
+function getStep() {
+  return getReferenceMetrics().outGapWorld;
+}
+
+function getDragSensitivity() {
+  return getReferenceMetrics().pxToWorld * 1.2;
+}
+
+function getPointerDragTarget(clientX) {
+  return state.dragOriginScroll - (clientX - state.dragOriginX) * getDragSensitivity();
+}
+
+function adjustDragOriginAtBounds(clientX, previousClientX) {
+  const sensitivity = getDragSensitivity();
+  const maxScroll = getMaxScroll();
+  let bound = null;
+  if (clientX > previousClientX && state.targetScroll <= 0.0001) {
+    bound = 0;
+  } else if (clientX < previousClientX && state.targetScroll >= maxScroll - 0.0001) {
+    bound = maxScroll;
+  }
+  if (bound === null) return;
+  state.dragOriginX = clientX - (state.dragOriginScroll - bound) / sensitivity;
+  canvas.dataset.dragBoundReset = `${Math.round(bound / getReferenceMetrics().pxToWorld)}`;
+}
+
+function getWheelScrollDelta(event) {
+  const wheelX = Number.isFinite(event.wheelDeltaX) ? event.wheelDeltaX : -event.deltaX;
+  const wheelY = Number.isFinite(event.wheelDeltaY) ? event.wheelDeltaY : -event.deltaY;
+  const axis = Math.abs(wheelX) >= Math.abs(wheelY) ? wheelX : wheelY;
+  const factor = event.deltaMode === 1 ? HOME_WHEEL_LINE_FACTOR : HOME_WHEEL_PIXEL_FACTOR;
+  return -axis * factor;
+}
+
+function markHomeMotionActive() {
+  state.homeMotionActiveUntil = performance.now() + 300;
+}
+
+function getMaxScroll() {
+  return Math.max(0, (state.photos.length - 1) * getStep());
+}
+
+function setHomeScrollTargetIndex(index) {
+  const nextIndex = clamp(index, 0, Math.max(state.photos.length - 1, 0));
+  state.targetScroll = nextIndex * getStep();
+  const metrics = getReferenceMetrics();
+  canvas.dataset.targetScrollPx = (state.targetScroll / metrics.pxToWorld).toFixed(2);
+  markHomeMotionActive();
+  clampTarget();
+}
+
+function clampTarget() {
+  state.targetScroll = clamp(state.targetScroll, 0, getMaxScroll());
+}
+
+function updateRendererClear() {
+  renderer.setClearColor(rendererClearColor, 0);
+  updateBackgroundPlane();
+}
+
+function updateBackgroundPlane() {
+  if (!backgroundPlane) return;
+  const z = -0.8;
+  const distance = camera.position.z - z;
+  const height = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5) * distance;
+  const width = height * camera.aspect;
+  backgroundPlane.position.set(0, 0, z);
+  backgroundPlane.scale.set(width, height, 1);
+  backgroundPlane.userData.uniforms.uSolidColor.value.copy(threeColorFromRgb(state.surfaceRgb));
+  backgroundPlane.userData.uniforms.uWorldToPx.value = getReferenceMetrics().worldToPx;
+  canvas.dataset.webglBackgroundPlane = '1';
+  canvas.dataset.webglBackgroundColor = rgbVar(state.surfaceRgb);
+}
+
+function applyRouteState(options = {}) {
+  const { initial = false, updateMode = true } = options;
+  const route = getPathRoute();
+  const routeMode = !initial && route.mode === VIEW.loading ? VIEW.index : route.mode;
+
+  if (Number.isFinite(route.index)) {
+    state.activeIndex = clamp(route.index, 0, Math.max(state.photos.length - 1, 0));
+    state.workIndex = state.activeIndex;
+    state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
+    state.scroll = state.targetScroll;
+  }
+
+  if (initial || !updateMode) {
+    state.initialRouteMode = routeMode === VIEW.detail ? routeMode : null;
+    state.mode = routeMode === VIEW.detail ? VIEW.loading : routeMode;
+    return;
+  }
+
+  setMode(routeMode, { updateRoute: false });
+  updateUi();
+}
+
+function syncRouteForMode(mode, options = {}) {
+  const { replace = false } = options;
+  if (mode === VIEW.loading) return;
+  const nextPath = routePathForMode(mode);
+  if (!nextPath || window.location.pathname === nextPath) return;
+  const method = replace ? 'replaceState' : 'pushState';
+  history[method]({}, '', nextPath);
+}
+
+function routePathForMode(mode) {
+  if (mode === VIEW.about) return '/about';
+  if (mode === VIEW.studio) return '/studio';
+  if (mode === VIEW.detail || mode === VIEW.work) return photoPath(state.activeIndex);
+  return '/';
+}
+
+function photoPath(index) {
+  const photo = state.photos[index];
+  return photo?.slug ? `/${photo.slug}` : '/';
+}
+
+function getPathRoute() {
+  if (isStudioPath()) return { mode: VIEW.studio };
+  if (isAboutPath()) return { mode: VIEW.about };
+  const slug = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  if (slug) {
+    const index = state.photos.findIndex((photo) => photo.slug === slug || photo.id === slug);
+    if (index >= 0) return { mode: VIEW.detail, index };
+  }
+  return { mode: window.location.pathname === '/' ? VIEW.loading : VIEW.index };
+}
+
+function getInitialMode() {
+  if (isStudioPath()) return VIEW.studio;
+  if (isAboutPath()) return VIEW.about;
+  return VIEW.loading;
+}
+
+function getPathMode() {
+  if (isStudioPath()) return VIEW.studio;
+  if (isAboutPath()) return VIEW.about;
+  return VIEW.index;
+}
+
+function isStudioPath() {
+  return window.location.pathname.replace(/\/$/, '') === '/studio';
+}
+
+function isAboutPath() {
+  return window.location.pathname.replace(/\/$/, '') === '/about';
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function mix(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function roundTo(value, decimals = 2) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function damp(current, target, ease) {
+  if (ease <= 0) return current;
+  if (ease >= 1) return target;
+  return mix(current, target, 1 - Math.exp(Math.log(1 - ease) * frameDelta));
+}
+
+function easeIo2(value) {
+  return value < 0.5 ? 2 * value * value : -1 + (4 - 2 * value) * value;
+}
+
+function easeI3(value) {
+  return value * value * value;
+}
+
+function easeO6(value) {
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return 1 - 2 ** (-10 * value);
+}
+
+function resetMotionState() {
+  state.railActiveY = 0;
+  state.railActiveLerp = 0.08;
+  state.railOffset = 0;
+  state.railMotionReady = false;
+  state.railTargetActiveY = 0;
+  state.railTargetOffset = 0;
+  state.projectSwitchStartedAt = 0;
+  state.workLayerMotion = [];
+  state.workMotionActive = false;
+  state.workBgFadeAt = 0;
+  state.workBgMotionActive = false;
+  state.workBgOpacity = 0;
+  state.workBgTargetOpacity = 0;
+  state.workThumbMotion = [];
+  state.workThumbMotionActive = false;
+  state.exitingWorkIndex = -1;
+  state.detailEntryStartedAt = 0;
+  state.detailExitStartedAt = 0;
+  resetPaginationMotion();
+}
+
+function resetPaginationMotion() {
+  state.paginationHeight = 0;
+  state.paginationDigitDirection = 1;
+  state.paginationDigitFromIndex = -1;
+  state.paginationDigitOut = false;
+  state.paginationDigitShowOut = false;
+  state.paginationDigitStartedAt = 0;
+  state.paginationDigitToIndex = state.activeIndex;
+  state.paginationLeft = [];
+  state.paginationOpacity = [];
+  state.paginationOpen = 0;
+  state.paginationTop = 49;
+  state.paginationWidth = [];
+}
+
+function updateDomMotion() {
+  updateLoaderCounter();
+  updateRailMotion();
+  updateWorkBgMotion();
+  updateWorkLayerMotion();
+  updateWorkThumbMotion();
+  updatePaginationDigits();
+}
+
+function updatePaginationDigits() {
+  if (!galleryEls.paginationItems?.length) return;
+
+  const metrics = getPaginationMetrics();
+  const activeSlot = paginationSlotForPhoto(state.activeIndex);
+  const fromSlot = state.paginationDigitFromIndex >= 0
+    ? paginationSlotForPhoto(state.paginationDigitFromIndex)
+    : -1;
+  const toSlot = state.paginationDigitToIndex >= 0
+    ? paginationSlotForPhoto(state.paginationDigitToIndex)
+    : -1;
+  const isHomeSurface = state.mode === VIEW.index;
+  const isProjectSurface = state.mode === VIEW.detail || state.mode === VIEW.work;
+  const showRootLayer = isHomeSurface || isProjectSurface || state.paginationDigitOut;
+  const color = `rgb(${state.textRgb.map((value) => Math.round(value)).join(', ')})`;
+  const elapsed = performance.now() - state.paginationDigitStartedAt;
+  const switching = state.paginationDigitStartedAt > 0 && elapsed < 1500;
+  const showOutEnterDelay = 220;
+  const enterDelay = state.paginationDigitShowOut ? showOutEnterDelay : 100;
+  const enterProgress = easeO6(clamp((elapsed - enterDelay) / 1200, 0, 1));
+  const enterOpacityProgress = easeO6(clamp(elapsed / 320, 0, 1));
+  const leaveProgress = easeI3(clamp(elapsed / 200, 0, 1));
+  const forward = state.paginationDigitDirection >= 0;
+  const enterStart = forward ? 101 : -101;
+  const leaveEnd = forward ? -101 : 101;
+  const aShowOutStart = 101;
+  const bShowOutStart = -101;
+  const aOutEnd = 101;
+  const bOutEnd = -101;
+  const enterStarted = elapsed >= enterDelay;
+  const isSameIndexShow = !state.paginationDigitOut
+    && fromSlot === toSlot;
+
+  galleryEls.paginationItems.forEach((item, index) => {
+    const isActiveSlot = index === activeSlot;
+    const isVisible = isProjectSurface && isActiveSlot;
+    const isHomeWindow = isHomeSurface && isActiveSlot;
+    const isLeaving =
+      switching &&
+      index === fromSlot &&
+      leaveProgress < 1 &&
+      (isProjectSurface || isHomeSurface || state.paginationDigitOut) &&
+      !isSameIndexShow;
+    const shouldPaint = isVisible || isLeaving;
+    const shouldWindow = shouldPaint || isHomeWindow;
+    const rectLeft = metrics.openLeft + index * metrics.step;
+    const rectRight = rectLeft + metrics.activeWidth - metrics.strokeWidth;
+    const a = item.querySelector('.pgn-a');
+    const b = item.querySelector('.pgn-b');
+    const aInner = a?.firstElementChild;
+    const bInner = b?.firstElementChild;
+
+    item.classList.toggle('is-visible', shouldPaint);
+    item.classList.toggle('is-leaving', isLeaving);
+    item.style.opacity = showRootLayer ? '1' : '0';
+    item.style.top = shouldWindow ? `${metrics.top}px` : '-1px';
+    item.style.width = shouldWindow ? '100%' : '0px';
+    item.style.height = shouldWindow ? `${metrics.height}px` : '0px';
+    item.style.fontSize = `${metrics.fontSize}px`;
+    item.style.lineHeight = `${metrics.height}px`;
+
+    if (a) {
+      const aWidth = a.offsetWidth || 18;
+      a.style.top = '0px';
+      a.style.left = `${rectLeft - aWidth * 1.4}px`;
+      a.style.height = `${metrics.height}px`;
+      a.style.fontSize = `${metrics.fontSize}px`;
+      a.style.lineHeight = `${metrics.height}px`;
+    }
+    if (b) {
+      const bWidth = b.offsetWidth || 18;
+      b.style.top = '0px';
+      b.style.left = `${rectRight + bWidth * 0.4}px`;
+      b.style.height = `${metrics.height}px`;
+      b.style.fontSize = `${metrics.fontSize}px`;
+      b.style.lineHeight = `${metrics.height}px`;
+    }
+    let aX = 0;
+    let bX = 0;
+    let digitOpacity = shouldWindow ? 1 : 0;
+    if (isLeaving) {
+      aX = mix(0, state.paginationDigitOut ? aOutEnd : leaveEnd, leaveProgress);
+      bX = mix(0, state.paginationDigitOut ? bOutEnd : leaveEnd, leaveProgress);
+      digitOpacity = 1;
+    } else if (isHomeWindow) {
+      aX = state.paginationDigitOut ? aOutEnd : -101;
+      bX = -101;
+    } else if (isVisible && switching && index === toSlot) {
+      if (state.paginationDigitShowOut && !enterStarted) {
+        aX = aShowOutStart;
+        bX = bShowOutStart;
+      } else {
+        aX = mix(state.paginationDigitShowOut ? aShowOutStart : enterStart, 0, enterProgress);
+        bX = mix(state.paginationDigitShowOut ? bShowOutStart : enterStart, 0, enterProgress);
+      }
+      digitOpacity = Math.max(enterProgress, enterOpacityProgress);
+    } else if (!isVisible) {
+      aX = state.paginationDigitShowOut ? aShowOutStart : enterStart;
+      bX = state.paginationDigitShowOut ? bShowOutStart : enterStart;
+    }
+
+    if (aInner) {
+      aInner.style.color = color;
+      aInner.style.opacity = digitOpacity.toFixed(4);
+      aInner.style.transform = `translate3d(${aX.toFixed(2)}%, 0, 0)`;
+    }
+    if (bInner) {
+      bInner.style.color = color;
+      bInner.style.opacity = digitOpacity.toFixed(4);
+      bInner.style.transform = `translate3d(${bX.toFixed(2)}%, 0, 0)`;
+    }
+  });
+}
+
+function startPaginationDigitMotion(previousIndex, nextIndex, options = {}) {
+  state.paginationDigitFromIndex = previousIndex;
+  state.paginationDigitToIndex = nextIndex;
+  state.paginationDigitDirection = Math.sign(nextIndex - previousIndex) || 1;
+  state.paginationDigitOut = false;
+  state.paginationDigitShowOut = Boolean(options.out);
+  state.paginationDigitStartedAt = performance.now();
+}
+
+function startPaginationDigitExit(index) {
+  state.paginationDigitFromIndex = clamp(index, 0, Math.max(galleryEls.paginationItems?.length - 1 || 0, 0));
+  state.paginationDigitToIndex = -1;
+  state.paginationDigitDirection = 1;
+  state.paginationDigitOut = true;
+  state.paginationDigitShowOut = false;
+  state.paginationDigitStartedAt = performance.now();
+}
+
+function updateLoaderCounter(force = false) {
+  if (!galleryEls.loaderDigits?.length) return;
+  const total = Math.max(state.loaderTotal, 1);
+  const loaded = state.mode === VIEW.loading ? state.loaderLoaded : total;
+  const value = clamp(Math.round((99 / total) * loaded) + 1, 1, 100);
+  if (!force && value === state.loaderValue) return;
+  state.loaderValue = value;
+  const digits = String(value).padStart(3, '0').slice(-3);
+  galleryEls.loaderDigits.forEach((digit, index) => {
+    digit.textContent = digits[index];
+  });
+}
+
+function updateRailTargets(force = false) {
+  const { railStep, targetActiveY, targetOffset } = getRailTargets();
+  state.railTargetOffset = targetOffset;
+  state.railTargetActiveY = targetActiveY;
+  galleryEls.detailRail.style.setProperty('--rail-active-step', `${railStep}px`);
+
+  if (force || !state.railMotionReady) {
+    state.railOffset = targetOffset;
+    state.railActiveY = targetActiveY;
+    state.railMotionReady = true;
+    applyRailStyles();
+  }
+}
+
+function updateRailMotion() {
+  if (!galleryEls.detailRail) return;
+  updateRailTargets();
+  const offsetEase = state.mode === VIEW.work ? WORK_DOM_LERP : 0.14;
+  const workMediaSwitching = state.mode === VIEW.work
+    && galleryEls.shell?.classList.contains('is-work-media-switching');
+  const activeEase = workMediaSwitching ? (state.railActiveLerp || WORK_SWITCH_FRAME_LERP) : (state.railActiveLerp || offsetEase);
+  state.railOffset = damp(state.railOffset, state.railTargetOffset, offsetEase);
+  state.railActiveY = damp(state.railActiveY, state.railTargetActiveY, activeEase);
+  state.railActiveLerp = workMediaSwitching
+    ? damp(state.railActiveLerp, 0.13, WORK_DOM_LERP)
+    : damp(state.railActiveLerp, state.mode === VIEW.work ? WORK_DOM_LERP : 0.14, WORK_DOM_LERP);
+  applyRailStyles();
+}
+
+function applyRailStyles() {
+  if (!galleryEls.detailRail) return;
+  galleryEls.detailRail.style.setProperty('--rail-offset', `${state.railOffset.toFixed(2)}px`);
+  galleryEls.detailRail.style.setProperty('--rail-active-y', `${state.railActiveY.toFixed(2)}px`);
+}
+
+function getRailTargets() {
+  const railStep = getRailStep();
+  const railIndex = state.mode === VIEW.work ? state.workIndex : state.activeIndex;
+  if (state.mode === VIEW.work) {
+    return {
+      railIndex,
+      railStep,
+      targetActiveY: railIndex * railStep,
+      targetOffset: 0,
+    };
+  }
+  const railAnchor = window.innerWidth <= 760 ? 72 : window.innerHeight * 0.1;
+  const targetOffset = Math.max(0, railIndex * railStep - railAnchor);
+  const targetActiveY = railIndex * railStep - targetOffset;
+  return { railIndex, railStep, targetActiveY, targetOffset };
+}
+
+function getRailStep() {
+  if (window.innerWidth <= 760) return 46;
+  return window.innerHeight * 0.0666667;
+}
+
+function primeWorkRailMotion() {
+  const { targetActiveY, targetOffset } = getRailTargets();
+  state.railOffset = targetOffset;
+  state.railTargetOffset = targetOffset;
+  state.railActiveY = targetActiveY + getThumbHiddenY(state.workIndex);
+  state.railTargetActiveY = targetActiveY;
+  state.railActiveLerp = WORK_ENTRY_LERP;
+  state.railMotionReady = true;
+  applyRailStyles();
+}
+
+function resetWorkLayerImage(index) {
+  const img = galleryEls.workLayers?.[index]?.querySelector('.work-layer-img');
+  if (!img) return;
+  img.dataset.loadToken = String((Number(img.dataset.loadToken) || 0) + 1);
+  img.src = EMPTY_MEDIA_SRC;
+  img.dataset.loaded = 'false';
+}
+
+function requestWorkLayerImageLoad(index, motion, delay = 100) {
+  const img = galleryEls.workLayers?.[index]?.querySelector('.work-layer-img');
+  const src = getWorkImageSrc(index) || img?.dataset.workSrc || '';
+  if (!img || !src || motion.imageVisible || motion.loadStarted) return;
+
+  motion.loadStarted = true;
+  motion.loadToken = (motion.loadToken || 0) + 1;
+  const token = String((Number(img.dataset.loadToken) || 0) + 1);
+  img.dataset.loadToken = token;
+  warmWorkLayerImage(index).then((decodedSrc) => {
+    if (img.dataset.loadToken !== token) return;
+    img.src = decodedSrc || src;
+    img.dataset.loaded = 'true';
+    motion.revealAt = performance.now() + delay;
+  });
+}
+
+function resetWorkThumbImage(index) {
+  const thumb = galleryEls.thumbs?.[index];
+  const image = thumb?.querySelector('span');
+  if (!thumb || !image) return;
+  image.dataset.loadToken = String((Number(image.dataset.loadToken) || 0) + 1);
+  image.style.backgroundImage = 'none';
+  image.dataset.loaded = 'false';
+  thumb.classList.remove('is-thumb-image-visible');
+}
+
+function requestWorkThumbImageLoad(index, motion, delay = 0) {
+  const thumb = galleryEls.thumbs?.[index];
+  const image = thumb?.querySelector('span');
+  const src = image?.dataset.thumbSrc || '';
+  if (!thumb || !image || !src || motion.imageEntered || motion.imageLoadStarted) return;
+
+  motion.imageLoadStarted = true;
+  motion.imageLoadToken = (motion.imageLoadToken || 0) + 1;
+  const token = String((Number(image.dataset.loadToken) || 0) + 1);
+  image.dataset.loadToken = token;
+  const preload = new Image();
+  const reveal = () => {
+    if (image.dataset.loadToken !== token) return;
+    image.style.backgroundImage = `url("${src}")`;
+    image.dataset.loaded = 'true';
+    motion.imageEnterAt = performance.now() + delay;
+  };
+  preload.src = src;
+  if (preload.decode) {
+    preload.decode().then(reveal).catch(reveal);
+  } else {
+    preload.onload = reveal;
+    preload.onerror = reveal;
+  }
+}
+
+function primeWorkLayerMotion(options = {}) {
+  const { preserveImages = false } = options;
+  const travel = getWorkLayerTravel();
+  const now = performance.now();
+  const activeIndex = state.mode === VIEW.work ? state.workIndex : state.activeIndex;
+  const previousMotion = state.workLayerMotion;
+  const resetFx = state.mode === VIEW.work && !preserveImages;
+  window.cancelAnimationFrame(workFxResetRaf);
+  galleryEls.shell?.classList.toggle('is-work-media-resetting', resetFx);
+  primeWorkBgMotion(now);
+  state.workLayerMotion = galleryEls.workLayers?.map((layer, index) => {
+    const active = index === activeIndex;
+    const wasVisible = preserveImages && Boolean(previousMotion[index]?.imageVisible);
+    const y = travel;
+    const opacity = wasVisible ? 1 : 0;
+    const bgOpacity = wasVisible ? 0 : 1;
+    if (resetFx) resetWorkLayerImage(index);
+    layer.style.setProperty('--work-layer-y', `${y.toFixed(2)}px`);
+    layer.style.setProperty('--work-layer-opacity', opacity.toFixed(4));
+    layer.style.setProperty('--work-layer-bg-opacity', bgOpacity.toFixed(4));
+    const motion = {
+      bgOpacity,
+      entered: !active || wasVisible,
+      imageVisible: wasVisible,
+      loadStarted: wasVisible,
+      loadToken: (previousMotion[index]?.loadToken || 0) + (resetFx ? 1 : 0),
+      opacity,
+      revealAt: wasVisible ? now : Number.POSITIVE_INFINITY,
+      targetOpacity: opacity,
+      targetY: active && state.mode === VIEW.work ? 0 : y,
+      lerp: active && state.mode === VIEW.work && !wasVisible ? WORK_ENTRY_LERP : WORK_DOM_LERP,
+      y,
+    };
+    if (state.mode === VIEW.work && active && !wasVisible) {
+      requestWorkLayerImageLoad(index, motion, WORK_ENTRY_REVEAL_DELAY);
+    }
+    return motion;
+  }) || [];
+  if (resetFx) {
+    void galleryEls.workStage?.offsetHeight;
+    workFxResetRaf = window.requestAnimationFrame(() => {
+      galleryEls.shell?.classList.remove('is-work-media-resetting');
+      workFxResetRaf = 0;
+    });
+  }
+  state.workMotionActive = state.mode === VIEW.work;
+}
+
+function primeWorkThumbMotion(options = {}) {
+  const { preserveVisible = false } = options;
+  const now = performance.now();
+  const resetImages = state.mode === VIEW.work && !preserveVisible;
+  state.workThumbMotion = galleryEls.thumbs?.map((thumb, index) => {
+    const mediaOrder = getWorkMediaOrder(index);
+    const participates = mediaOrder >= 0;
+    const hiddenY = getThumbHiddenY(index);
+    const visible = preserveVisible && state.mode === VIEW.work && participates;
+    const y = visible ? 0 : hiddenY;
+    const opacity = visible ? 1 : 0;
+    const imageOpacity = visible ? 1 : 0;
+    thumb.style.setProperty('--thumb-y', `${y.toFixed(2)}px`);
+    thumb.style.setProperty('--thumb-opacity', opacity.toFixed(4));
+    thumb.style.setProperty('--thumb-image-opacity', imageOpacity.toFixed(4));
+    if (resetImages) resetWorkThumbImage(index);
+    thumb.classList.toggle('is-thumb-image-visible', visible);
+    const motion = {
+      delay: participates ? mediaOrder * 30 : 0,
+      entered: visible,
+      enterAt: now + (participates ? mediaOrder * 30 : 0),
+      imageEntered: visible,
+      imageEnterAt: now + (participates ? mediaOrder * 80 : 0),
+      imageLoadStarted: visible,
+      imageLoadToken: resetImages ? 1 : 0,
+      imageOpacity,
+      imageTargetOpacity: visible ? 1 : 0,
+      lerp: state.mode === VIEW.work && participates && !visible ? WORK_ENTRY_LERP : WORK_DOM_LERP,
+      mediaOrder,
+      opacity,
+      targetOpacity: visible ? 1 : 0,
+      targetY: visible ? 0 : hiddenY,
+      y,
+    };
+    if (state.mode === VIEW.work && participates && !visible) {
+      motion.imageEnterAt = Number.POSITIVE_INFINITY;
+      requestWorkThumbImageLoad(index, motion, mediaOrder * 80);
+    }
+    return motion;
+  }) || [];
+  state.workThumbMotionActive = true;
+}
+
+function hideWorkThumbMotion() {
+  ensureWorkThumbMotion();
+  state.workThumbMotion.forEach((motion, index) => {
+    motion.entered = false;
+    motion.imageEntered = false;
+    motion.imageTargetOpacity = 0;
+    galleryEls.thumbs[index]?.classList.remove('is-thumb-image-visible');
+    motion.targetOpacity = 0;
+    motion.targetY = getThumbHiddenY(index);
+  });
+  state.workThumbMotionActive = true;
+}
+
+function primeWorkBgMotion(now = performance.now()) {
+  state.workBgFadeAt = now + 1100;
+  state.workBgOpacity = state.mode === VIEW.work ? 1 : 0;
+  state.workBgTargetOpacity = state.mode === VIEW.work ? 1 : 0;
+  state.workBgMotionActive = true;
+  galleryEls.workStage?.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
+  galleryEls.workStageBg?.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
+}
+
+function hideWorkBgMotion() {
+  state.workBgFadeAt = performance.now();
+  state.workBgTargetOpacity = 0;
+  state.workBgMotionActive = true;
+}
+
+function prepareWorkLayerSwitch(previousIndex, nextIndex, direction = Math.sign(nextIndex - previousIndex) || 1) {
+  ensureWorkLayerMotion(previousIndex);
+  primeWorkBgMotion();
+  const travel = getWorkLayerTravel();
+  const exitY = -travel * direction;
+  const enterY = travel * direction;
+  const now = performance.now();
+
+  state.workLayerMotion.forEach((motion, index) => {
+    const layer = galleryEls.workLayers[index];
+    if (index === previousIndex) {
+      motion.targetY = exitY;
+      motion.entered = true;
+      motion.imageVisible = true;
+      motion.opacity = 1;
+      motion.targetOpacity = 1;
+      motion.lerp = WORK_SWITCH_LAYER_LERP;
+      layer?.style.setProperty('--work-layer-opacity', '1.0000');
+      return;
+    }
+    if (index === nextIndex) {
+      const wasVisible = Boolean(motion.imageVisible);
+      const bgOpacity = wasVisible ? 0 : 1;
+      motion.y = enterY;
+      motion.bgOpacity = bgOpacity;
+      motion.entered = wasVisible;
+      motion.opacity = wasVisible ? 1 : 0;
+      motion.revealAt = wasVisible ? now : Number.POSITIVE_INFINITY;
+      motion.targetOpacity = wasVisible ? 1 : 0;
+      motion.targetY = 0;
+      motion.lerp = WORK_SWITCH_LAYER_LERP;
+      layer?.style.setProperty('--work-layer-opacity', motion.opacity.toFixed(4));
+      layer?.style.setProperty('--work-layer-bg-opacity', bgOpacity.toFixed(4));
+      if (!wasVisible) requestWorkLayerImageLoad(index, motion, WORK_SWITCH_REVEAL_DELAY);
+      return;
+    }
+  });
+  state.workMotionActive = true;
+}
+
+function ensureWorkLayerMotion(activeIndex = state.mode === VIEW.work ? state.workIndex : state.activeIndex) {
+  const layerCount = galleryEls.workLayers?.length || 0;
+  const activeMotion = state.workLayerMotion[activeIndex];
+  const staleWorkEntry =
+    state.mode === VIEW.work
+    && (!activeMotion || Math.abs(activeMotion.targetY || 0) > 0.1);
+  if (!staleWorkEntry && state.workLayerMotion.length === layerCount) return;
+  const savedWorkIndex = state.workIndex;
+  state.workIndex = activeIndex;
+  primeWorkLayerMotion();
+  state.workIndex = savedWorkIndex;
+}
+
+function updateWorkLayerMotion() {
+  if (!galleryEls.workLayers?.length) return;
+  ensureWorkLayerMotion();
+  const activeWork = state.mode === VIEW.work || state.workMotionActive || state.workMix > 0.01;
+  const activeMotion = state.workLayerMotion[state.workIndex];
+  canvas.dataset.workMotionLength = String(state.workLayerMotion.length);
+  canvas.dataset.workMotionActive = String(state.workMotionActive);
+  canvas.dataset.workMotionY = Number.isFinite(activeMotion?.y) ? activeMotion.y.toFixed(2) : '';
+  canvas.dataset.workMotionTargetY = Number.isFinite(activeMotion?.targetY) ? activeMotion.targetY.toFixed(2) : '';
+  if (!activeWork) return;
+
+  let moving = false;
+  const now = performance.now();
+  state.workLayerMotion.forEach((motion, index) => {
+    const layer = galleryEls.workLayers[index];
+    if (state.mode === VIEW.work && index === state.workIndex && !motion.entered && !motion.loadStarted) {
+      requestWorkLayerImageLoad(index, motion, WORK_ENTRY_REVEAL_DELAY);
+    }
+    if (state.mode === VIEW.work && !motion.entered && now >= motion.revealAt) {
+      motion.entered = true;
+      motion.imageVisible = true;
+      motion.bgOpacity = 0;
+      motion.opacity = 1;
+      motion.targetOpacity = 1;
+      layer?.style.setProperty('--work-layer-bg-opacity', '0.0000');
+      layer?.style.setProperty('--work-layer-opacity', '1.0000');
+    }
+    const motionEase = motion.lerp || WORK_DOM_LERP;
+    motion.y = damp(motion.y, motion.targetY, motionEase);
+    motion.lerp = damp(motionEase, WORK_DOM_LERP, WORK_DOM_LERP);
+    if (Math.abs(motion.targetY - motion.y) > 0.45) {
+      moving = true;
+    }
+    layer.style.setProperty('--work-layer-y', `${motion.y.toFixed(2)}px`);
+  });
+  state.workMotionActive = moving;
+}
+
+function updateWorkBgMotion() {
+  if (!galleryEls.workStageBg) return;
+  const active = state.mode === VIEW.work || state.workBgMotionActive || state.workMix > 0.01;
+  if (!active) return;
+
+  if (state.mode === VIEW.work && performance.now() >= state.workBgFadeAt) {
+    state.workBgTargetOpacity = 0;
+  }
+  if (state.mode !== VIEW.work) {
+    state.workBgTargetOpacity = 0;
+  }
+
+  if (state.workBgTargetOpacity > state.workBgOpacity) {
+    state.workBgOpacity = state.workBgTargetOpacity;
+  } else {
+    state.workBgOpacity = damp(state.workBgOpacity, state.workBgTargetOpacity, 0.55);
+  }
+
+  const moving = Math.abs(state.workBgTargetOpacity - state.workBgOpacity) > 0.005;
+  galleryEls.workStage.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
+  galleryEls.workStageBg.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
+  state.workBgMotionActive = moving;
+}
+
+function ensureWorkThumbMotion() {
+  if (state.workThumbMotion.length === galleryEls.thumbs?.length) return;
+  primeWorkThumbMotion({ preserveVisible: state.mode === VIEW.work });
+}
+
+function updateWorkThumbMotion() {
+  if (!galleryEls.thumbs?.length) return;
+  ensureWorkThumbMotion();
+  const now = performance.now();
+  const active = state.mode === VIEW.work || state.workThumbMotionActive || state.workMix > 0.01;
+  if (!active) return;
+
+  let moving = false;
+  state.workThumbMotion.forEach((motion, index) => {
+    const thumb = galleryEls.thumbs[index];
+    const mediaOrder = getWorkMediaOrder(index);
+    const participates = mediaOrder >= 0;
+    if (motion.mediaOrder !== mediaOrder) {
+      motion.mediaOrder = mediaOrder;
+      motion.entered = false;
+      motion.imageEntered = false;
+      motion.enterAt = now + (participates ? mediaOrder * 30 : 0);
+      motion.imageEnterAt = now + (participates ? mediaOrder * 80 : 0);
+      motion.imageLoadStarted = false;
+      motion.targetY = participates && state.mode === VIEW.work ? 0 : getThumbHiddenY(index);
+      motion.targetOpacity = 0;
+      motion.imageTargetOpacity = 0;
+      motion.lerp = participates && state.mode === VIEW.work ? WORK_ENTRY_LERP : WORK_DOM_LERP;
+      resetWorkThumbImage(index);
+      thumb.classList.remove('is-thumb-image-visible');
+      if (participates && state.mode === VIEW.work) {
+        motion.imageEnterAt = Number.POSITIVE_INFINITY;
+        requestWorkThumbImageLoad(index, motion, mediaOrder * 80);
+      }
+    }
+    if (state.mode === VIEW.work) {
+      if (participates && !motion.imageEntered && !motion.imageLoadStarted) {
+        motion.imageEnterAt = Number.POSITIVE_INFINITY;
+        requestWorkThumbImageLoad(index, motion, mediaOrder * 80);
+      }
+      if (participates && !motion.entered && now >= motion.enterAt) {
+        motion.entered = true;
+        motion.targetY = 0;
+        motion.targetOpacity = 1;
+      }
+      if (participates && !motion.imageEntered && now >= motion.imageEnterAt) {
+        motion.imageEntered = true;
+        motion.imageTargetOpacity = 1;
+        thumb.classList.add('is-thumb-image-visible');
+      }
+      if (!participates) {
+        motion.entered = false;
+        motion.imageEntered = false;
+        motion.imageTargetOpacity = 0;
+        thumb.classList.remove('is-thumb-image-visible');
+        motion.targetY = getThumbHiddenY(index);
+        motion.targetOpacity = 0;
+      }
+    } else {
+      motion.entered = false;
+      motion.imageEntered = false;
+      motion.imageTargetOpacity = 0;
+      thumb.classList.remove('is-thumb-image-visible');
+      motion.targetY = getThumbHiddenY(index);
+      motion.targetOpacity = 0;
+    }
+
+    const motionEase = motion.lerp || WORK_DOM_LERP;
+    motion.y = damp(motion.y, motion.targetY, motionEase);
+    motion.lerp = damp(motionEase, WORK_DOM_LERP, WORK_DOM_LERP);
+    motion.opacity = damp(
+      motion.opacity,
+      motion.targetOpacity,
+      motion.targetOpacity > motion.opacity ? 0.16 : 0.12,
+    );
+    motion.imageOpacity = motion.imageTargetOpacity;
+    if (
+      Math.abs(motion.targetY - motion.y) > 0.45 ||
+      Math.abs(motion.targetOpacity - motion.opacity) > 0.01
+    ) {
+      moving = true;
+    }
+    thumb.style.setProperty('--thumb-y', `${motion.y.toFixed(2)}px`);
+    thumb.style.setProperty('--thumb-opacity', motion.opacity.toFixed(4));
+    thumb.style.setProperty('--thumb-image-opacity', motion.imageOpacity.toFixed(4));
+  });
+  state.workThumbMotionActive = moving;
+}
+
+function getWorkLayerTravel() {
+  const metrics = getReferenceMetrics();
+  const layerHeight = galleryEls.workLayers?.[0]?.getBoundingClientRect().height || metrics.in.h * 0.8;
+  return 0.5 * (metrics.winH - layerHeight) + layerHeight + metrics.in.gapX;
+}
+
+function getThumbHiddenY(index = 0) {
+  const metrics = getReferenceMetrics();
+  const railTop = galleryEls.detailRail?.getBoundingClientRect().top || 0;
+  const thumbHeight = galleryEls.thumbs?.[0]?.getBoundingClientRect().height || getRailStep() * 0.75;
+  return metrics.winH + metrics.in.gapX - railTop + thumbHeight * 0.2 * index;
+}
+
+function getReferenceMetrics() {
+  const winW = window.innerWidth;
+  const winH = window.innerHeight;
+  const psdW = 1600;
+  const psdH = 1200;
+  const ratio = winW / winH > psdW / psdH ? winH / psdH : winW / psdW;
+  const winWpsdW = winW / psdW;
+  const out = {
+    gapX: 20 * ratio,
+    h: 370 * ratio,
+    w: 100 * ratio,
+  };
+  out.x = 0.5 * (winW - out.w);
+  out.y = 0.5 * (winH - out.h);
+  const modeIn = {
+    gapX: 152 * winWpsdW,
+    h: 602 * ratio,
+    w: 1054 * ratio,
+  };
+  modeIn.x = 0.5 * (winW - modeIn.w);
+  modeIn.y = 0.5 * (winH - modeIn.h);
+  const pxToWorld = 2 / winH;
+  const worldToPx = 1 / pxToWorld;
+  return {
+    in: modeIn,
+    out,
+    outGapPx: out.w + out.gapX,
+    outGapWorld: (out.w + out.gapX) * pxToWorld,
+    psdH,
+    psdW,
+    pxToWorld,
+    ratio,
+    winH,
+    winW,
+    winWpsdW,
+    worldToPx,
+    curveRadiusWorld: 500 * winWpsdW * pxToWorld,
+  };
+}
+
+function pixelRectToWorld(rect, metrics) {
+  const scale = metrics.pxToWorld;
+  return {
+    h: rect.h * scale,
+    w: rect.w * scale,
+    x: (rect.x + rect.w * 0.5 - metrics.winW * 0.5) * scale,
+    y: (metrics.winH * 0.5 - (rect.y + rect.h * 0.5)) * scale,
+  };
+}
+
+function referenceModeInRect(metrics, delta, isAbout = false) {
+  const rect = {
+    h: metrics.in.h,
+    w: metrics.in.w,
+    x: metrics.in.x,
+    y: metrics.in.y,
+  };
+  if (delta === 0) return rect;
+
+  const coefficient = 0.1;
+  const halfMain = 0.5 * metrics.in.w;
+  let sideW = 0.5 * (metrics.winW - (metrics.in.w + 2 * metrics.in.gapX));
+  if (sideW < halfMain) sideW = halfMain;
+
+  if (delta > 0) {
+    if (delta === 1) {
+      rect.w = sideW;
+      rect.x = metrics.in.x + (metrics.in.gapX + metrics.in.w) + (isAbout ? metrics.in.gapX : 0);
+    } else {
+      rect.w = metrics.out.w;
+      rect.x = metrics.in.x
+        + (metrics.in.gapX + metrics.in.w)
+        + (metrics.in.gapX + sideW)
+        + (metrics.in.gapX + metrics.out.w) * (delta - 2)
+        + metrics.in.gapX * (delta - 1) * (delta - 1) * coefficient;
+    }
+  } else if (delta < 0) {
+    if (delta === -1) {
+      rect.w = sideW;
+      rect.x = metrics.in.x - (metrics.in.gapX + sideW) - (isAbout ? metrics.in.gapX : 0);
+    } else {
+      rect.w = metrics.out.w;
+      rect.x = metrics.in.x
+        - (metrics.in.gapX + sideW)
+        + (metrics.in.gapX + metrics.out.w) * (delta + 1)
+        + metrics.in.gapX * (delta + 1) * -(delta + 1) * coefficient;
+    }
+  }
+
+  return rect;
+}
+
+function referenceModeWorkRect(metrics, delta) {
+  const rect = referenceModeInRect(metrics, delta);
+  if (delta === 0) {
+    rect.x = metrics.in.x;
+    rect.w = metrics.in.w;
+    rect.y = 0.8 * -(metrics.in.h + metrics.in.gapX);
+    rect.h = 0.8 * metrics.in.h;
+    return rect;
+  }
+
+  const coefficient = 0.1;
+  const halfMain = 0.5 * metrics.in.w;
+  let sideW = 0.5 * (metrics.winW - (metrics.in.w + 2 * metrics.in.gapX));
+  if (sideW < halfMain) sideW = halfMain;
+
+  if (delta > 0) {
+    if (delta === 1) {
+      rect.w = sideW;
+      rect.x = metrics.winW + metrics.in.gapX;
+    } else {
+      rect.w = metrics.out.w;
+      rect.x = metrics.in.x
+        + (metrics.in.gapX + metrics.in.w)
+        + (metrics.in.gapX + sideW)
+        + (metrics.in.gapX + metrics.out.w) * (delta - 2)
+        + metrics.in.gapX * (delta - 1) * (delta - 1) * coefficient;
+    }
+  } else if (delta < 0) {
+    if (delta === -1) {
+      rect.w = sideW;
+      rect.x = -(sideW + metrics.in.gapX);
+    } else {
+      rect.w = metrics.out.w;
+      rect.x = metrics.in.x
+        - (metrics.in.gapX + sideW)
+        + (metrics.in.gapX + metrics.out.w) * (delta + 1)
+        + metrics.in.gapX * (delta + 1) * -(delta + 1) * coefficient;
+    }
+  }
+  rect.y = metrics.in.y;
+  rect.h = metrics.in.h;
+  return rect;
+}
+
+function shadowTitleFor(photo, index = 0) {
+  const custom = Array.isArray(photo?.shadowTitle)
+    ? photo.shadowTitle
+    : Array.isArray(photo?.titleLines)
+      ? photo.titleLines
+      : null;
+  const source = custom?.length ? custom : PROJECT_TITLE_BANK[index % PROJECT_TITLE_BANK.length];
+  const first = normalizeTitleLine(source?.[0] || PROJECT_TITLE_BANK[0][0]);
+  const second = normalizeTitleLine(source?.[1] || '');
+  return [first, second];
+}
+
+function normalizeTitleLine(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[^\w& ]+/g, '')
+    .replace(/_/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
+function getTitleHomePositions(lineIndex, charCount) {
+  const exact = TITLE_LAYOUT.homeByLength[charCount]?.[lineIndex];
+  if (exact?.length === charCount) return exact;
+  const defaultPositions = TITLE_LAYOUT.home[lineIndex] || [];
+  return defaultPositions.length === charCount ? defaultPositions : [];
+}
+
+function getTitleWorkSpacing(lineIndex, charCount) {
+  const exact = TITLE_LAYOUT.workLetterSpacingByLength[charCount]?.[lineIndex];
+  if (exact?.length === charCount) return exact;
+  const defaultSpacing = TITLE_LAYOUT.workLetterSpacing[lineIndex] || [];
+  return defaultSpacing.length === charCount ? defaultSpacing : [];
+}
+
+function pulseProjectSwitch() {
+  galleryEls.shell?.classList.remove('is-project-switching');
+  window.clearTimeout(projectSwitchTimer);
+  window.requestAnimationFrame(() => {
+    galleryEls.shell?.classList.add('is-project-switching');
+    projectSwitchTimer = window.setTimeout(() => {
+      galleryEls.shell?.classList.remove('is-project-switching');
+      state.exitingProjectIndex = -1;
+      state.projectSwitchStartedAt = 0;
+      updateUi();
+    }, 1650);
+  });
+}
+
+function pulseTitleModeMove() {
+  galleryEls.shell?.classList.remove('is-title-mode-moving', 'is-title-mode-settled');
+  window.clearTimeout(titleModeTimer);
+  window.requestAnimationFrame(() => {
+    galleryEls.shell?.classList.add('is-title-mode-moving');
+    titleModeTimer = window.setTimeout(() => {
+      galleryEls.shell?.classList.remove('is-title-mode-moving');
+      galleryEls.shell?.classList.add('is-title-mode-settled');
+    }, 1240);
+  });
+}
+
+function pulseWorkMedia() {
+  galleryEls.shell?.classList.remove('is-work-media-switching');
+  window.clearTimeout(workMediaTimer);
+  window.requestAnimationFrame(() => {
+    galleryEls.shell?.classList.add('is-work-media-switching');
+    workMediaTimer = window.setTimeout(() => {
+      galleryEls.shell?.classList.remove('is-work-media-switching');
+      state.exitingWorkIndex = -1;
+      updateUi();
+    }, 1100);
+  });
+}
+
+function titleLineHtml(line, lineIndex) {
+  return `<span class="title-line" data-line="${lineIndex}" data-text="${escapeHtml(line)}">${titleCharsHtml(line, lineIndex)}</span>`;
+}
+
+function titleCharsHtml(line, lineIndex = 0) {
+  const chars = [...line.replace(/\s+/g, '')];
+  const custom = getTitleHomePositions(lineIndex, chars.length);
+  const spacing = getTitleWorkSpacing(lineIndex, chars.length);
+  return chars
+    .map((char, index) => {
+      const fallback = chars.length > 1 ? (index / (chars.length - 1)) * 86 + 4 : 0;
+      const homeX = custom[index] ?? fallback;
+      const workSpacing = spacing[index] ?? 0;
+      return `<i class="title-char" data-work-spacing="${workSpacing}" style="--char-index:${index}; --home-x:${homeX}; --work-spacing:${workSpacing}; --char-count:${chars.length}"><span>${escapeHtml(char)}</span></i>`;
+    })
+    .join('');
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[char]);
+}
+
+function splitLabelHtml(label) {
+  return [...label]
+    .map((char, index) =>
+      char === ' '
+        ? '<span class="split-gap" aria-hidden="true">&nbsp;</span>'
+        : `<span class="split-unit" style="--char-index:${index}"><span class="split-char">${char}</span></span>`,
+    )
+    .join('');
+}
+
+const vertexShader = `
+  varying vec2 vUv;
+  varying float vCurve;
+  uniform float uDetail;
+  uniform float uCurve;
+  uniform float uCurveRadius;
+  uniform float uHover;
+  uniform float uIntro;
+  uniform float uIndex;
+  uniform float uTime;
+  uniform float uTransition;
+  uniform float uVelocity;
+  uniform float uSwitch;
+  uniform float uSwitchDirection;
+  uniform float uWorldToPx;
+
+  float curveEaseFn(float value) {
+    return value < 0.5 ? 2.0 * value * value : -1.0 + (4.0 - 2.0 * value) * value;
+  }
+
+  void main() {
+    vUv = uv;
+    vec3 transformed = position;
+    vec4 world = modelMatrix * vec4(transformed, 1.0);
+    float curveDistance = abs(world.x);
+    float curveRadius = max(0.01, uCurveRadius);
+    float curveEase = curveDistance < curveRadius ? curveRadius - curveEaseFn(curveDistance / curveRadius) * curveRadius : 0.0;
+    float curveZ = curveEase * uCurve;
+    vCurve = min(curveZ * uWorldToPx * 0.005, 0.7);
+    transformed.z += curveZ;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+  }
+`;
+
+const fragmentShader = `
+  precision highp float;
+
+  varying float vCurve;
+  varying vec2 vUv;
+  uniform vec3 uAccent;
+  uniform float uAlpha;
+  uniform float uColorMix;
+  uniform float uDetail;
+  uniform int uHasTexture;
+  uniform float uImageAspect;
+  uniform float uMultiply;
+  uniform float uPhotoY;
+  uniform float uPlaneAspect;
+  uniform float uTextureScale;
+  uniform vec3 uSolidColor;
+  uniform vec2 uUvScale;
+  uniform sampler2D uTexture;
+
+  void main() {
+    if (uHasTexture != 1) {
+      gl_FragColor = vec4(uSolidColor, 1.0);
+      return;
+    }
+
+    vec2 uv = (vUv - 0.5) * uUvScale + 0.5;
+    uv.y += uPhotoY;
+    vec4 image = texture2D(uTexture, uv);
+    float gray = (image.r + image.g + image.b) / 3.0;
+    float light = vCurve + uColorMix;
+    vec4 tone = mix(vec4(vec3(gray), 0.4), image, light);
+    vec4 multiplied = vec4(tone.rgb * uAccent, tone.a);
+    tone = mix(tone, multiplied, clamp(uMultiply, 0.0, 1.0));
+
+    gl_FragColor = vec4(tone.rgb, tone.a * image.a * uAlpha);
+  }
+`;

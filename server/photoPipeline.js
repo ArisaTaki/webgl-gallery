@@ -1,0 +1,250 @@
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import sharp from 'sharp';
+
+const execFileAsync = promisify(execFile);
+
+export const imageExtensions = new Set([
+  '.bmp',
+  '.gif',
+  '.heic',
+  '.jpeg',
+  '.jpg',
+  '.png',
+  '.tif',
+  '.tiff',
+  '.webp',
+]);
+
+export const variants = [
+  { key: 'thumb', width: 520, quality: 66 },
+  { key: 'medium', width: 1280, quality: 78 },
+  { key: 'large', width: 2200, quality: 84 },
+];
+
+export async function ensureGalleryDirs({ dataDir, mediaDir, uploadDir }) {
+  await Promise.all([
+    mkdir(dataDir, { recursive: true }),
+    mkdir(mediaDir, { recursive: true }),
+    mkdir(uploadDir, { recursive: true }),
+  ]);
+}
+
+export async function loadManifest(manifestPath) {
+  try {
+    const raw = await readFile(manifestPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    const photos = Array.isArray(parsed.photos) ? parsed.photos : [];
+    return {
+      count: photos.length,
+      photos,
+      updatedAt: parsed.updatedAt || null,
+    };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return { count: 0, photos: [], updatedAt: null };
+    }
+    throw error;
+  }
+}
+
+export async function saveManifest(manifestPath, photos) {
+  const payload = {
+    updatedAt: new Date().toISOString(),
+    count: photos.length,
+    photos,
+  };
+  await writeFile(manifestPath, `${JSON.stringify(payload, null, 2)}\n`);
+  return payload;
+}
+
+export async function collectSourceImages(sourceDir) {
+  const entries = await readdir(sourceDir, { withFileTypes: true });
+  const candidates = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .filter((name) => imageExtensions.has(path.extname(name).toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+
+  const byStem = new Map();
+  for (const fileName of candidates) {
+    const extension = path.extname(fileName).toLowerCase();
+    const stem = fileName.slice(0, -path.extname(fileName).length);
+    const previous = byStem.get(stem);
+    if (!previous || sourcePreference(extension) > sourcePreference(previous.extension)) {
+      byStem.set(stem, {
+        extension,
+        fileName,
+        inputPath: path.join(sourceDir, fileName),
+        stem,
+      });
+    }
+  }
+
+  return [...byStem.values()].sort((a, b) =>
+    a.stem.localeCompare(b.stem, 'en', { numeric: true }),
+  );
+}
+
+export async function processImage({ inputPath, mediaDir, id, sourceName, title }) {
+  await mkdir(mediaDir, { recursive: true });
+
+  const prepared = await prepareSharpInput(inputPath);
+  try {
+    const source = sharp(prepared.inputPath, { limitInputPixels: false }).rotate();
+    const metadata = await source.metadata();
+    const blur = await source
+      .clone()
+      .resize({ width: 36, withoutEnlargement: true })
+      .webp({ quality: 36 })
+      .toBuffer();
+    const color = await sampleColor(source);
+
+    const outputs = {};
+    for (const variant of variants) {
+      const fileName = `${id}-${variant.key}.webp`;
+      await source
+        .clone()
+        .resize({ width: variant.width, withoutEnlargement: true })
+        .webp({ quality: variant.quality, effort: 5 })
+        .toFile(path.join(mediaDir, fileName));
+      outputs[variant.key] = `/media/${fileName}`;
+    }
+
+    return {
+      id,
+      title,
+      sourceName,
+      width: metadata.width || 1,
+      height: metadata.height || 1,
+      aspect: (metadata.width || 1) / (metadata.height || 1),
+      color,
+      blurDataUrl: `data:image/webp;base64,${blur.toString('base64')}`,
+      ...outputs,
+    };
+  } finally {
+    await prepared.cleanup();
+  }
+}
+
+export async function syncSourcePhotos({
+  dataDir,
+  manifestPath,
+  mediaDir,
+  sourceDir,
+  uploadDir,
+}) {
+  await ensureGalleryDirs({ dataDir, mediaDir, uploadDir });
+  const current = await loadManifest(manifestPath);
+  const uploaded = current.photos.filter((photo) => photo.group === 'upload');
+  const sources = await collectSourceImages(sourceDir);
+  const processed = [];
+
+  for (const [index, source] of sources.entries()) {
+    const id = `source-${source.stem.replace(/[^a-z0-9_-]/gi, '-').toLowerCase()}`;
+    processed.push(
+      await processImage({
+        inputPath: source.inputPath,
+        mediaDir,
+        id,
+        sourceName: source.fileName,
+        title: `念念 ${String(index + 1).padStart(3, '0')}`,
+      }),
+    );
+  }
+
+  const photos = [
+    ...processed.map((photo, index) => ({
+      ...photo,
+      group: 'source',
+      index: index + 1,
+    })),
+    ...uploaded.map((photo, index) => ({
+      ...photo,
+      index: processed.length + index + 1,
+    })),
+  ];
+
+  return saveManifest(manifestPath, photos);
+}
+
+export async function addUploadedPhotos({
+  files,
+  manifestPath,
+  mediaDir,
+  titlePrefix = '念念',
+}) {
+  const current = await loadManifest(manifestPath);
+  const nextPhotos = [...current.photos];
+
+  for (const [index, file] of files.entries()) {
+    const stem = path.basename(file.originalname, path.extname(file.originalname));
+    const safeStem = stem.replace(/[^a-z0-9_-]/gi, '-').toLowerCase() || 'photo';
+    const id = `upload-${Date.now()}-${index}-${safeStem}`;
+    const title = `${titlePrefix} ${String(nextPhotos.length + 1).padStart(3, '0')}`;
+    try {
+      const processed = await processImage({
+        inputPath: file.path,
+        mediaDir,
+        id,
+        sourceName: file.originalname,
+        title,
+      });
+      nextPhotos.push({
+        ...processed,
+        group: 'upload',
+        index: nextPhotos.length + 1,
+        uploadedAt: new Date().toISOString(),
+      });
+    } finally {
+      await unlink(file.path).catch(() => {});
+    }
+  }
+
+  return saveManifest(manifestPath, nextPhotos);
+}
+
+async function sampleColor(source) {
+  const pixel = await source
+    .clone()
+    .resize(1, 1, { fit: 'cover' })
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  const [r = 20, g = 20, b = 20] = pixel;
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function sourcePreference(extension) {
+  if (extension === '.bmp' || extension === '.tif' || extension === '.tiff') {
+    return 3;
+  }
+  if (extension === '.png' || extension === '.webp') {
+    return 2;
+  }
+  return 1;
+}
+
+async function prepareSharpInput(inputPath) {
+  try {
+    await sharp(inputPath, { limitInputPixels: false }).metadata();
+    return {
+      inputPath,
+      cleanup: async () => {},
+    };
+  } catch (error) {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'nian-gallery-'));
+    const convertedPath = path.join(tempDir, `${path.basename(inputPath)}.png`);
+    await execFileAsync('sips', ['-s', 'format', 'png', inputPath, '--out', convertedPath]);
+    await sharp(convertedPath, { limitInputPixels: false }).metadata();
+    return {
+      inputPath: convertedPath,
+      cleanup: async () => {
+        await unlink(convertedPath).catch(() => {});
+      },
+    };
+  }
+}
