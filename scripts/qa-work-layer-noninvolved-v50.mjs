@@ -140,7 +140,7 @@ async function sample(client, label) {
   })()`);
 }
 
-const source = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const staticFailures = [];
 [
   'const exitY = -travel * direction;',

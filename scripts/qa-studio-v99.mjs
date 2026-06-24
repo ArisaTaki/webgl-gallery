@@ -5,9 +5,9 @@ const LOCAL_URL = process.env.LOCAL_URL || 'http://localhost:5279/';
 
 async function staticChecks() {
   const [main, server, pipeline, readme] = await Promise.all([
-    readFile(new URL('../src/main.js', import.meta.url), 'utf8'),
-    readFile(new URL('../server/index.js', import.meta.url), 'utf8'),
-    readFile(new URL('../server/photoPipeline.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/main.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../server/index.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../server/photoPipeline.ts', import.meta.url), 'utf8'),
     readFile(new URL('../README.md', import.meta.url), 'utf8'),
   ]);
   const required = [

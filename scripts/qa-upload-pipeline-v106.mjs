@@ -16,6 +16,8 @@ const inputDir = path.join(tempRoot, 'input');
 const inputPath = path.join(inputDir, 'upload sample.png');
 const port = await getFreePort();
 const serverUrl = `http://127.0.0.1:${port}`;
+const root = path.resolve(new URL('..', import.meta.url).pathname);
+const tsxBin = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'tsx.cmd' : 'tsx');
 
 let child;
 
@@ -39,8 +41,8 @@ try {
     .png()
     .toFile(inputPath);
 
-  child = spawn(process.execPath, ['server/index.js'], {
-    cwd: path.resolve(new URL('..', import.meta.url).pathname),
+  child = spawn(tsxBin, ['server/index.ts'], {
+    cwd: root,
     env: {
       ...process.env,
       GALLERY_DATA_DIR: dataDir,

@@ -7,7 +7,7 @@ const VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function assertSourcePort() {
-  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
   const checks = [
     ['thumb order delay', 'imageEnterAt: now + (participates ? mediaOrder * 80 : 0)'],

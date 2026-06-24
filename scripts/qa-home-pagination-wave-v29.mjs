@@ -167,7 +167,7 @@ async function sample(client, label) {
   })()`);
 }
 
-const source = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
 const staticFailures = [];
 if (!source.includes('const latencyLift = 30 * clamp(state.curveLatency, 0, 1);')) {
   staticFailures.push('Expected Home pagination wave to use reference 30 * latency.x amplitude.');

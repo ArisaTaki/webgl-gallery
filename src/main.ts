@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import './styles.css';
 
-const canvas = document.querySelector('#webgl');
-const app = document.querySelector('#app');
+type LooseRecord = Record<string, any>;
+
+const canvas = document.querySelector('#webgl') as HTMLCanvasElement;
+const app = document.querySelector('#app') as HTMLElement;
 const WEBGL_DPR = 1.5;
 const PAGINATION_DPR = 2;
 const BASE_SURFACE_RGB = [20, 20, 20];
@@ -158,16 +160,16 @@ const clock = new THREE.Clock();
 const loader = new THREE.TextureLoader();
 const rendererClearColor = new THREE.Color(0x141414);
 const pointer = new THREE.Vector2(0.5, 0.5);
-const planes = [];
-let backgroundPlane = null;
+const planes: any[] = [];
+let backgroundPlane: any = null;
 const emptyTexture = new THREE.DataTexture(new Uint8Array([16, 16, 15, 255]), 1, 1);
 emptyTexture.colorSpace = THREE.SRGBColorSpace;
 emptyTexture.needsUpdate = true;
-const workImageDecodeCache = new Map();
+const workImageDecodeCache = new Map<string, LooseRecord>();
 
 let viewport = { width: 2, height: 2, aspect: 1 };
-let galleryEls = {};
-let paginationCtx = null;
+let galleryEls: LooseRecord = {};
+let paginationCtx: CanvasRenderingContext2D | null = null;
 let projectSwitchTimer = 0;
 let titleModeTimer = 0;
 let transitionTimer = 0;
@@ -817,7 +819,7 @@ function loadPlaneTexture(photo, uniforms) {
   const primarySrc = photo.medium || photo.large || photo.thumb;
   const fallbackSrc = photo.thumb && photo.thumb !== primarySrc ? photo.thumb : '';
 
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     const finish = () => {
       markTextureLoaded();
       resolve();
@@ -885,7 +887,7 @@ function attachEvents() {
     applyRouteState({ fromPop: true });
   });
 
-  app.addEventListener('click', (event) => {
+  app.addEventListener('click', (event: any) => {
     const action = event.target.closest('[data-action]');
     const thumb = event.target.closest('[data-index]');
 
@@ -928,7 +930,7 @@ function attachEvents() {
     }
     if (name === 'studio-link') {
       setMode(VIEW.studio);
-      app.querySelector('input[name="key"]')?.focus();
+      (app.querySelector('input[name="key"]') as HTMLInputElement | null)?.focus();
     }
     if (name === 'close-studio') {
       setMode(VIEW.index);
@@ -940,37 +942,37 @@ function attachEvents() {
   app.addEventListener('mouseover', onMorphEnter);
   app.addEventListener('mouseout', onMorphLeave);
 
-  app.addEventListener('submit', (event) => {
+  app.addEventListener('submit', (event: any) => {
     if (event.target.matches('.studio-form')) {
       onStudioSubmit(event);
     }
   });
 
-  app.addEventListener('change', (event) => {
+  app.addEventListener('change', (event: any) => {
     if (event.target.matches('input[name="photos"]')) {
       updateStudioFileCount(event.target.form);
     }
   });
 }
 
-function onMorphEnter(event) {
+function onMorphEnter(event: any) {
   const trigger = getMorphTrigger(event);
   if (trigger) morphIcon(trigger, 'arrow');
 }
 
-function onMorphLeave(event) {
+function onMorphLeave(event: any) {
   const trigger = getMorphTrigger(event);
   if (trigger) morphIcon(trigger, 'cross');
 }
 
-function getMorphTrigger(event) {
+function getMorphTrigger(event: any) {
   const trigger = event.target.closest('[data-morph-trigger], [data-morph-symbol]');
   if (!trigger || !app.contains(trigger)) return null;
   if (event.relatedTarget && trigger.contains(event.relatedTarget)) return null;
   return trigger;
 }
 
-function onMorphMouseMove(event) {
+function onMorphMouseMove(event: any) {
   if (!galleryEls.shell) return;
   app.querySelectorAll('[data-morph-trigger]').forEach((trigger) => {
     const rect = trigger.getBoundingClientRect();
@@ -1180,7 +1182,7 @@ function onKeyDown(event) {
   state.keyBuffer = `${state.keyBuffer}${lowerKey}`.slice(-8);
   if (state.keyBuffer.endsWith('nian')) {
     setMode(VIEW.studio);
-    app.querySelector('input[name="key"]')?.focus();
+    (app.querySelector('input[name="key"]') as HTMLInputElement | null)?.focus();
   }
 
   if (state.mode === VIEW.about) {
@@ -1294,7 +1296,7 @@ function onKeyDown(event) {
   }
 }
 
-async function onStudioSubmit(event) {
+async function onStudioSubmit(event: any) {
   event.preventDefault();
   const form = event.currentTarget;
   const payload = new FormData(form);
@@ -1328,7 +1330,7 @@ async function onStudioSubmit(event) {
     resize();
     setActive(state.photos.length - 1, true);
     setMode(VIEW.detail);
-  } catch (error) {
+  } catch (error: any) {
     galleryEls.status.textContent = error.message;
     form.classList.remove('is-uploading');
     form.querySelectorAll('input, button').forEach((control) => {
@@ -1338,7 +1340,7 @@ async function onStudioSubmit(event) {
   }
 }
 
-function updateStudioFileCount(form) {
+function updateStudioFileCount(form: any) {
   const target = form?.querySelector('[data-studio-file-count]') || galleryEls.studioFileCount;
   const files = form?.elements.photos?.files || [];
   if (!target) return;
@@ -1420,7 +1422,7 @@ function tick() {
   }
 
   renderer.render(scene, camera);
-  drawPagination(elapsed);
+  drawPagination();
   updateDomMotion();
   requestAnimationFrame(tick);
 }
@@ -2354,7 +2356,7 @@ function setWorkIndex(index) {
   pulseWorkMedia();
 }
 
-function setMode(mode, options = {}) {
+function setMode(mode, options: LooseRecord = {}) {
   const { updateRoute = true } = options;
   const previousMode = state.mode;
   let shouldPrimeWorkMotion = false;
@@ -2519,7 +2521,7 @@ function updateBackgroundPlane() {
   canvas.dataset.webglBackgroundColor = rgbVar(state.surfaceRgb);
 }
 
-function applyRouteState(options = {}) {
+function applyRouteState(options: LooseRecord = {}) {
   const { initial = false, updateMode = true } = options;
   const route = getPathRoute();
   const routeMode = !initial && route.mode === VIEW.loading ? VIEW.index : route.mode;
@@ -2541,7 +2543,7 @@ function applyRouteState(options = {}) {
   updateUi();
 }
 
-function syncRouteForMode(mode, options = {}) {
+function syncRouteForMode(mode, options: LooseRecord = {}) {
   const { replace = false } = options;
   if (mode === VIEW.loading) return;
   const nextPath = routePathForMode(mode);
@@ -2786,7 +2788,7 @@ function updatePaginationDigits() {
   });
 }
 
-function startPaginationDigitMotion(previousIndex, nextIndex, options = {}) {
+function startPaginationDigitMotion(previousIndex, nextIndex, options: LooseRecord = {}) {
   state.paginationDigitFromIndex = previousIndex;
   state.paginationDigitToIndex = nextIndex;
   state.paginationDigitDirection = Math.sign(nextIndex - previousIndex) || 1;
@@ -2946,7 +2948,7 @@ function requestWorkThumbImageLoad(index, motion, delay = 0) {
   }
 }
 
-function primeWorkLayerMotion(options = {}) {
+function primeWorkLayerMotion(options: LooseRecord = {}) {
   const { preserveImages = false } = options;
   const travel = getWorkLayerTravel();
   const now = performance.now();
@@ -2994,7 +2996,7 @@ function primeWorkLayerMotion(options = {}) {
   state.workMotionActive = state.mode === VIEW.work;
 }
 
-function primeWorkThumbMotion(options = {}) {
+function primeWorkThumbMotion(options: LooseRecord = {}) {
   const { preserveVisible = false } = options;
   const now = performance.now();
   const resetImages = state.mode === VIEW.work && !preserveVisible;
@@ -3289,14 +3291,14 @@ function getReferenceMetrics() {
   const psdH = 1200;
   const ratio = winW / winH > psdW / psdH ? winH / psdH : winW / psdW;
   const winWpsdW = winW / psdW;
-  const out = {
+  const out: LooseRecord = {
     gapX: 20 * ratio,
     h: 370 * ratio,
     w: 100 * ratio,
   };
   out.x = 0.5 * (winW - out.w);
   out.y = 0.5 * (winH - out.h);
-  const modeIn = {
+  const modeIn: LooseRecord = {
     gapX: 152 * winWpsdW,
     h: 602 * ratio,
     w: 1054 * ratio,

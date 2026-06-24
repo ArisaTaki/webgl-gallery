@@ -1,6 +1,6 @@
 # 念念照片画廊
 
-一个本地优先的 WebGL 家庭相册。前端使用 Three.js shader 做横向胶片带、滚动形变、颗粒和暗角；服务端负责上传照片、生成 WebP 派生图并更新照片清单。
+一个本地优先的 TypeScript WebGL 家庭相册。前端使用 Three.js shader 做横向胶片带、滚动形变、颗粒和暗角；服务端负责上传照片、生成 WebP 派生图并更新照片清单。
 
 ## 启动
 
@@ -50,6 +50,9 @@ npm run sync:photos -- --source "/absolute/path/to/photos"
 ## 构建
 
 ```bash
+npm run typecheck
 npm run build
 npm run preview
 ```
+
+前端入口、服务端入口和照片同步脚本都使用 TypeScript：`src/main.ts`、`server/index.ts`、`server/photoPipeline.ts` 和 `scripts/sync-photos.ts`。

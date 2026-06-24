@@ -1,12 +1,12 @@
 **Findings**
 - [P1] Project color system was previously missing and is now partially fixed
-  Location: `src/main.js`, `src/styles.css`, detail/work states.
+  Location: `src/main.ts`, `src/styles.css`, detail/work states.
   Evidence: reference projects carry `color.bg`, `color.txt`, and `color.work` through WebGL clear color, image tint, title color, pagination, and work media. Local evidence now uses the live reference project color token list; `/nian-nian-002` resolves to the reference second-project palette with Detail/Work `--surface-rgb: 190, 190, 190`, `--text-rgb: 30, 30, 30`, and Work `--work-rgb: 168, 168, 168`.
   Impact: this is a core part of the reference image exhibition effect, not decorative theming.
   Fix: continue tuning per-photo palettes against live reference states and ensure every project transition carries color through GL, DOM, and controls.
 
 - [P1] Some reference motion primitives are still approximated rather than 1:1
-  Location: `src/main.js` WebGL layout, pagination loop, title letter motion, work media rail.
+  Location: `src/main.ts` WebGL layout, pagination loop, title letter motion, work media rail.
   Evidence: reference source uses `R.Damp`, mode-specific lerps, raw WebGL plane transforms, `pgnX` number motion, title class `L`, `letter.move({ start: "home", end: "work", d: 1200 })`, and work media `lT3d`/`sT3d`/`aY` tracks. Local now ports major pieces of that stack: reference-like Home/Detail wheel paths, pixel-rectangle hover checks, Detail previous meta/copy out layers, WebGL `x.targ - x.curr` plane offsets, clipped title rows/glyph wrappers, dynamic per-photo title density, Work `PROJECTS` timing, Detail top Project control geometry, Detail Explore geometry, reference-like `uUvScale`, mode-specific plane opacity/tinting, Detail side-plane clicks, top pagination metrics, Work rail/media DOM motion, Work image reveal timing, static Work stage wrapper, and Work wheel behavior. Detail switching and Work media switching are improved but still not proven exact.
   Latest v50 evidence: Work media switches now only mutate the outgoing and incoming large-media layers, matching reference `class b.up(i)` instead of mass-repositioning non-participating `lT3d` entries.
   Latest v51 evidence: `/tmp/compare-v51-work-stable.jpg` and `/tmp/compare-v51-work-entry-300ms.jpg` place the live reference and local Work states side by side at 1440 x 900. Both live reference and local stable Work now report active-frame opacity `0.7`, active-frame top near `151.6px`, right offset `44px`, and a `92 x 57` frame, correcting the previous local `0.95` line weight. The Work-entry 300ms sample also now reports local active-frame opacity `0.7`, matching the reference `#w-a` behavior where the frame is already at full opacity while its Y position is still moving. After the entry-only DOM lerp pass, 300ms motion is close: reference active frame top `310.38px` vs local `311.15px` (`+0.77px`), and reference active large layer top `356.36px` vs local `356.02px` (`-0.34px`). The remaining measured miss in that same state is image reveal opacity: reference active image opacity `0.306035`, local `0.216532` (`-0.09`). The same pass still shows broader remaining differences in content palette, title mass, and project/media slot structure, so full visual parity remains blocked.
@@ -55,25 +55,25 @@
   Fix: continue porting exact reference values and transition state machines, then compare mid-transition frames.
 
 - [P2] Extra non-reference overlay layer has been removed
-  Location: `index.html`, `src/main.js`, `src/styles.css`.
+  Location: `index.html`, `src/main.ts`, `src/styles.css`.
   Evidence: reference live capture has two canvases: `gl` and `c2d`. Local verification now has two canvases: `webgl` and `.pagination-canvas`.
   Impact: removing the invented overlay makes the rendering structure closer to the reference and prevents non-reference grain/veil artifacts.
   Fix: keep future image effects inside the main plane shader or pagination canvas, matching the reference architecture.
 
 - [P2] Extra non-reference bottom progress rule has been removed
-  Location: `src/main.js`, `src/styles.css`.
+  Location: `src/main.ts`, `src/styles.css`.
   Evidence: matched home wheel screenshots showed a bright local bottom progress line that is not part of the reference home surface. The DOM, style rules, and update loop for `bottom-progress` have been deleted.
   Impact: removes a visible artifact that made the local page read as a custom gallery rather than the reference interaction surface.
   Fix: keep progress/position feedback in the pagination canvas, as the reference does.
 
 - [P2] Extra non-reference global cursor layer has been removed
-  Location: `src/main.js`, `src/styles.css`.
+  Location: `src/main.ts`, `src/styles.css`.
   Evidence: reference CSS/source does not contain a global `.scene-cursor` layer or `cursor: none`; the reference cursor data is used for hit testing and polygon morphs inside project/explore controls. Local verification now reports `sceneCursorCount: 0`, `cursorStyle: auto`, and two canvases.
   Impact: removes a screenshot-visible crosshair artifact that was not part of the reference surface.
   Fix: keep cursor behavior scoped to reference controls and compare hover-state crops before marking this area complete.
 
 - [P2] SVG control hover behavior is now live-verified
-  Location: `src/main.js`, `src/styles.css`.
+  Location: `src/main.ts`, `src/styles.css`.
   Evidence: v57 live hover capture shows reference Project stays on the cross points during symbol hover, while reference Explore morphs from the cross points to the downward arrow on root hover. Local now mirrors that split behavior: Project keeps `9.207,10.508...` unchanged, Explore ends at `7,11.042 6.499,10.542...`. The side-by-side crops are `/tmp/compare-v57-control-project-symbol-hover-crop.jpg` and `/tmp/compare-v57-control-explore-root-hover-crop.jpg`; the v57 script, `qa-reference-hover-v20`, and `qa-project-control-v24` all report no failures.
   Impact: removes a subtle but visible non-reference hover affordance from the top Project control while preserving the source site's Explore polygon morph.
   Fix: keep `scripts/capture-control-hover-compare-v57.mjs` in the regression set for future control edits.
@@ -764,7 +764,7 @@
 - Verified v105 with `node --check scripts/qa-home-detail-keyboard-v13.mjs` and `npm run build`; the build still has only the known Vite chunk-size warning from the Three.js bundle.
 - Added isolated storage overrides to the Node/Vite server (`GALLERY_DATA_DIR`, `GALLERY_MEDIA_DIR`, `GALLERY_UPLOAD_DIR`, `GALLERY_MANIFEST_PATH`) so the upload pipeline can be tested without mutating the real family-photo archive. The production defaults still point at `public/data`, `public/media`, and `.uploads/tmp`.
 - Added `scripts/qa-upload-pipeline-v106.mjs` to exercise the hidden upload backdoor end to end with a synthetic 3000 x 2000 PNG, a random isolated server port, a wrong-key failure path, and a correct-key upload path.
-- Verified v106 with `node --check server/index.js`, `node --check server/photoPipeline.js`, `node --check scripts/qa-upload-pipeline-v106.mjs`, `node scripts/qa-upload-pipeline-v106.mjs`, a default `/api/photos` smoke check against the live local server, and `npm run build`. The latest v106 run reports wrong-key status `401`, correct-key status `200`, isolated manifest count `1`, metadata `title: QA Kid 001`, `width: 3000`, `height: 2000`, `aspect: 1.5`, generated WebP variants `thumb 520 x 347`, `medium 1280 x 853`, `large 2200 x 1467`, and empty upload temp directories after both the failed and successful upload attempts.
+- Verified v106 with `node --check server/index.ts`, `node --check server/photoPipeline.js`, `node --check scripts/qa-upload-pipeline-v106.mjs`, `node scripts/qa-upload-pipeline-v106.mjs`, a default `/api/photos` smoke check against the live local server, and `npm run build`. The latest v106 run reports wrong-key status `401`, correct-key status `200`, isolated manifest count `1`, metadata `title: QA Kid 001`, `width: 3000`, `height: 2000`, `aspect: 1.5`, generated WebP variants `thumb 520 x 347`, `medium 1280 x 853`, `large 2200 x 1467`, and empty upload temp directories after both the failed and successful upload attempts.
 - Ran a final v107 guard pass with a WebGL-enabled headless Chrome. A first attempt with `--disable-gpu` produced a false Studio timeout because the app creates its `THREE.WebGLRenderer` before rendering the DOM shell; the valid QA browser keeps WebGL enabled.
 - Verified v107 Studio and upload-adjacent behavior with `LOCAL_URL=http://127.0.0.1:5279/ node scripts/qa-studio-v99.mjs`: secret `nian` entry and direct `/studio` route both land in `mode: studio`, the panel is visible and interactive, password/title/file controls are present, file counter starts at `0 FILES`, and `/api/photos` still reports 17 archive photos from `source-000001` through `source-000017`.
 - Verified v107 local hard-assertion coverage with `node scripts/qa-home-detail-keyboard-v13.mjs`, `node scripts/qa-work-layer-fx-v19.mjs`, `node scripts/qa-work-loaded-return-v22.mjs`, `node scripts/qa-detail-drag-carry-v38.mjs`, `node scripts/qa-pgn-home-entry-v44.mjs`, `node scripts/qa-webgl-background-v64.mjs`, and `node scripts/capture-mobile-fallback-compare-v66.mjs`. These runs cover Home/Detail/Work keyboard paths, sparse Work media ordering, Work switch and return image loading, Detail drag exit carry, Home-to-Detail pagination structure, shader-backed WebGL background planes, and the mobile fallback with `/studio` still accessible.
@@ -786,4 +786,7 @@
 - The v111 browser delivery guard also passed `LOCAL_URL=http://127.0.0.1:5279/ node scripts/capture-mobile-fallback-compare-v66.mjs`, `LOCAL_URL=http://127.0.0.1:5279/ node scripts/qa-webgl-background-v64.mjs`, and `LOCAL_URL=http://127.0.0.1:5279/ node scripts/qa-work-layer-fx-v19.mjs`. These cover the mobile fallback with Studio access, shader/WebGL background planes in Detail and Work, and the true-timed Work media switch samples (`sampleMs` about `128.7 / 303.5 / 1604.9`) with active image opacity `0 / 0.0372 / 1` and no runtime exceptions.
 - Confirmed the git publish set with `git ls-files --others --exclude-standard`: it includes code, QA scripts, docs, package files, server code, and the two font files, while `.gitignore` excludes `public/media/`, `public/data/photos.json`, `dist/`, `.uploads/`, `node_modules/`, `.env`, and `.DS_Store`, so private generated photo assets and temporary upload originals are not committed.
 
-current result: ready-to-push final candidate; private photo media remains local/ignored by git.
+- Migrated the runtime project to TypeScript without changing the intended visual behavior. The browser entry is now `src/main.ts`, Vite loads it directly from `index.html`, the Express/Vite upload server is `server/index.ts`, the image-processing helpers are `server/photoPipeline.ts`, and local photo sync runs through `scripts/sync-photos.ts`. The QA harness remains JavaScript `.mjs` tooling, with source guards updated to inspect the new TypeScript runtime files.
+- Verified the TypeScript migration with `npm run typecheck`, `npm run build`, `node scripts/qa-upload-pipeline-v106.mjs`, production-preview CDP runs for `scripts/qa-studio-v99.mjs`, `scripts/qa-home-detail-keyboard-v13.mjs`, `scripts/qa-work-layer-fx-v19.mjs`, and `scripts/qa-pgn-home-entry-v44.mjs`, plus `node --check` across every `.mjs` QA script. The production-preview pgn run reports no runtime exceptions; the earlier dev-server pgn attempt was affected by an unrelated stale Vite HMR websocket port already in use.
+
+current result: TypeScript migration ready to publish; private photo media remains local/ignored by git.

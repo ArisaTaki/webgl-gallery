@@ -11,7 +11,7 @@ const MOBILE_UA =
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function assertSourcePort() {
-  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
   const checks = [
     ['mobile fallback markup', 'class="mobile-fallback"'],

@@ -12,7 +12,7 @@ const REFERENCE_SECOND_WORK = '168, 168, 168';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function assertSourcePort() {
-  const source = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
   const checks = [
     'const BASE_SURFACE_RGB = [20, 20, 20];',
     'const BASE_TEXT_RGB = [186, 196, 184];',
