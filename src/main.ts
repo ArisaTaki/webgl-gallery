@@ -1298,21 +1298,13 @@ function attachEvents() {
   app.addEventListener('mouseout', onMorphLeave);
 
   app.addEventListener('submit', (event: any) => {
-    if (event.target.matches('.setup-form')) {
-      onSetupSave(event);
-    }
-    if (event.target.matches('.studio-login-form')) {
-      onStudioLogin(event);
-    }
-    if (event.target.matches('.studio-upload-form')) {
-      onAdminPhotoUpload(event);
-    }
-    if (event.target.matches('.studio-group-form')) {
-      onAdminGroupSave(event);
-    }
-    if (event.target.matches('.studio-photo-form')) {
-      onAdminPhotoSave(event);
-    }
+    const form = event.target?.closest?.('form');
+    if (!form || !app.contains(form)) return;
+    if (form.matches('.setup-form')) onSetupSave(event, form);
+    if (form.matches('.studio-login-form')) onStudioLogin(event, form);
+    if (form.matches('.studio-upload-form')) onAdminPhotoUpload(event, form);
+    if (form.matches('.studio-group-form')) onAdminGroupSave(event, form);
+    if (form.matches('.studio-photo-form')) onAdminPhotoSave(event, form);
   });
 
   app.addEventListener('change', (event: any) => {
@@ -1675,9 +1667,9 @@ async function refreshSetupStatus() {
   updateUi();
 }
 
-async function onSetupSave(event: any) {
+async function onSetupSave(event: any, form) {
   event.preventDefault();
-  const form = event.currentTarget;
+  const payload = formJson(form);
   state.setupSaving = true;
   state.setupMessage = setupT('savingSetup');
   updateSetupMessage();
@@ -1688,7 +1680,7 @@ async function onSetupSave(event: any) {
     const response = await fetch('/api/setup/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formJson(form)),
+      body: JSON.stringify(payload),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.message || 'Setup failed.');
@@ -1761,9 +1753,8 @@ async function loadAdminGallery() {
   }
 }
 
-async function onStudioLogin(event: any) {
+async function onStudioLogin(event: any, form) {
   event.preventDefault();
-  const form = event.currentTarget;
   setStudioStatus('Logging in...');
   try {
     const response = await fetch('/api/admin/login', {
@@ -1789,9 +1780,8 @@ async function onAdminLogout() {
   renderStudioAdmin();
 }
 
-async function onAdminGroupSave(event: any) {
+async function onAdminGroupSave(event: any, form) {
   event.preventDefault();
-  const form = event.currentTarget;
   const id = form.dataset.groupId;
   const payload = formJson(form);
   setStudioStatus(id ? 'Saving group...' : 'Creating group...');
@@ -1818,14 +1808,14 @@ async function onAdminDeleteGroup(id) {
   }
 }
 
-async function onAdminPhotoUpload(event: any) {
+async function onAdminPhotoUpload(event: any, form) {
   event.preventDefault();
-  const form = event.currentTarget;
   const files = form.elements.photos?.files || [];
   if (!files.length) {
     setStudioStatus('Choose photos first.');
     return;
   }
+  const payload = new FormData(form);
   setStudioStatus('Uploading...');
   form.classList.add('is-uploading');
   form.querySelectorAll('input, textarea, select, button').forEach((control) => {
@@ -1834,7 +1824,7 @@ async function onAdminPhotoUpload(event: any) {
   try {
     const result = await adminFetch('/api/admin/photos', {
       method: 'POST',
-      body: new FormData(form),
+      body: payload,
     });
     state.adminGallery = result;
     await refreshPublicPhotos();
@@ -1852,9 +1842,8 @@ async function onAdminPhotoUpload(event: any) {
   }
 }
 
-async function onAdminPhotoSave(event: any) {
+async function onAdminPhotoSave(event: any, form) {
   event.preventDefault();
-  const form = event.currentTarget;
   const id = form.dataset.photoId;
   if (!id) return;
   setStudioStatus('Saving photo...');
