@@ -1,14 +1,12 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
-import { readFile, unlink } from 'node:fs/promises';
+import { mkdir, readFile, unlink } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
-import {
-  addUploadedPhotos,
-  ensureGalleryDirs,
-  loadManifest,
-} from './photoPipeline.js';
+import { clearAdminSessionCookie, createAdminSessionCookie, isAdminRequest, requireAdmin, verifyAdminPassword } from './auth.js';
+import { createGalleryStore } from './galleryStore.js';
+import { ensureGalleryDirs } from './photoPipeline.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -17,6 +15,7 @@ const distDir = path.join(root, 'dist');
 const dataDir = path.resolve(process.env.GALLERY_DATA_DIR || path.join(publicDir, 'data'));
 const mediaDir = path.resolve(process.env.GALLERY_MEDIA_DIR || path.join(publicDir, 'media'));
 const uploadDir = path.resolve(process.env.GALLERY_UPLOAD_DIR || path.join(root, '.uploads', 'tmp'));
+const originalDir = path.resolve(process.env.GALLERY_ORIGINAL_DIR || path.join(root, '.uploads', 'originals'));
 const manifestPath = path.resolve(process.env.GALLERY_MANIFEST_PATH || path.join(dataDir, 'photos.json'));
 const port = Number(process.env.PORT || 5279);
 const uploadKey = process.env.GALLERY_UPLOAD_KEY || '13209';
@@ -24,6 +23,9 @@ const isProduction = process.env.NODE_ENV === 'production';
 const disableHmr = process.env.GALLERY_DISABLE_HMR === '1';
 
 await ensureGalleryDirs({ dataDir, mediaDir, uploadDir });
+await mkdir(originalDir, { recursive: true });
+const galleryStore = createGalleryStore({ dataDir, manifestPath, mediaDir, originalDir, uploadDir });
+await galleryStore.init();
 
 const app = express();
 const upload = multer({
@@ -40,7 +42,123 @@ app.use('/data', express.static(dataDir, { maxAge: 0 }));
 
 app.get('/api/photos', async (_request, response, next) => {
   try {
-    response.json(await loadManifest(manifestPath));
+    const gallery = await galleryStore.listPublicGallery();
+    response.json(gallery.photos);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/gallery', async (request, response, next) => {
+  try {
+    response.json(await galleryStore.listPublicGallery({ groupSlug: request.query.group }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/session', (request, response) => {
+  response.json({ ok: true, authenticated: isAdminRequest(request) });
+});
+
+app.post('/api/admin/login', (request, response) => {
+  if (!verifyAdminPassword(request.body?.password || request.body?.key)) {
+    response.status(401).json({ ok: false, message: 'Invalid password.' });
+    return;
+  }
+  response.setHeader('Set-Cookie', createAdminSessionCookie());
+  response.json({ ok: true, authenticated: true });
+});
+
+app.post('/api/admin/logout', (_request, response) => {
+  response.setHeader('Set-Cookie', clearAdminSessionCookie());
+  response.json({ ok: true, authenticated: false });
+});
+
+app.get('/api/admin/gallery', requireAdmin, async (_request, response, next) => {
+  try {
+    response.json(await galleryStore.listAdminGallery());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/admin/groups', requireAdmin, async (_request, response, next) => {
+  try {
+    const gallery = await galleryStore.listAdminGallery();
+    response.json({ ok: true, groups: gallery.groups });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/groups', requireAdmin, async (request, response, next) => {
+  try {
+    response.status(201).json({ ok: true, group: await galleryStore.createGroup(request.body || {}) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/api/admin/groups/:id', requireAdmin, async (request, response, next) => {
+  try {
+    response.json({ ok: true, group: await galleryStore.updateGroup(request.params.id, request.body || {}) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/groups/:id', requireAdmin, async (request, response, next) => {
+  try {
+    response.json(await galleryStore.deleteGroup(request.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/photos', requireAdmin, upload.array('photos', 24), async (request, response, next) => {
+  try {
+    const files = Array.isArray(request.files) ? request.files : [];
+    if (!files.length) {
+      response.status(400).json({ ok: false, message: 'No photos received.' });
+      return;
+    }
+    response.status(201).json({
+      ok: true,
+      ...(await galleryStore.addPhotos({
+        files,
+        groupId: request.body?.groupId,
+        title: request.body?.title,
+        titlePrefix: request.body?.titlePrefix || 'Gallery',
+        description: request.body?.description,
+        capturedAt: request.body?.capturedAt,
+      })),
+    });
+  } catch (error) {
+    await cleanupTempFiles(request.files);
+    next(error);
+  }
+});
+
+app.patch('/api/admin/photos/:id', requireAdmin, async (request, response, next) => {
+  try {
+    response.json({ ok: true, photo: await galleryStore.updatePhoto(request.params.id, request.body || {}) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/admin/photos/:id', requireAdmin, async (request, response, next) => {
+  try {
+    response.json(await galleryStore.deletePhoto(request.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/admin/photos/:id/reprocess', requireAdmin, async (request, response, next) => {
+  try {
+    response.json({ ok: true, photo: await galleryStore.reprocessPhoto(request.params.id) });
   } catch (error) {
     next(error);
   }
@@ -62,10 +180,8 @@ app.post('/api/upload', upload.array('photos', 24), async (request, response, ne
       return;
     }
 
-    const manifest = await addUploadedPhotos({
+    const manifest = await galleryStore.addPhotos({
       files,
-      manifestPath,
-      mediaDir,
       titlePrefix: request.body?.titlePrefix || '念念',
     });
     response.json({ ok: true, count: manifest.count, photos: manifest.photos });
@@ -106,7 +222,7 @@ if (isProduction) {
 
 app.use((error, _request, response, _next) => {
   console.error(error);
-  response.status(500).json({
+  response.status(error.status || 500).json({
     ok: false,
     message: error.message || 'Unexpected server error.',
   });

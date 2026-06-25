@@ -68,6 +68,10 @@ const VIEW = {
 const state = {
   activeIndex: 0,
   aboutReturnMode: VIEW.index,
+  adminAuthenticated: false,
+  adminGallery: { groups: [], photos: [] },
+  adminLoading: false,
+  adminStatus: '',
   curveLatency: 0,
   detailEntryStartedAt: 0,
   detailExitStartedAt: 0,
@@ -273,6 +277,9 @@ async function init() {
   resize();
   updateUi();
   state.ready = true;
+  if (state.mode === VIEW.studio) {
+    ensureAdminLoaded();
+  }
 
   if (state.mode === VIEW.loading) {
     releaseInitialLoading(texturesReady);
@@ -286,7 +293,9 @@ async function init() {
 }
 
 async function loadPhotos() {
-  const manifest = await fetch('/api/photos', { cache: 'no-store' })
+  const groupSlug = routeGroupSlug();
+  const endpoint = groupSlug ? `/api/gallery?group=${encodeURIComponent(groupSlug)}` : '/api/photos';
+  const manifest = await fetch(endpoint, { cache: 'no-store' })
     .then((response) => (response.ok ? response.json() : Promise.reject()))
     .catch(() =>
       fetch('/data/photos.json', { cache: 'no-store' }).then((response) =>
@@ -295,7 +304,7 @@ async function loadPhotos() {
     )
     .catch(() => ({ photos: [] }));
 
-  return normalizePhotos(manifest.photos || []);
+  return normalizePhotos(Array.isArray(manifest) ? manifest : manifest.photos || []);
 }
 
 function normalizePhotos(photos) {
@@ -631,32 +640,39 @@ function renderShell() {
         <p class="about-rights">PRIVATE FAMILY ARCHIVE<br />NIAN NIAN 2026</p>
       </section>
 
-      <section class="studio-panel" aria-label="上传照片" aria-hidden="${state.mode !== VIEW.studio}">
-        <form class="studio-form">
-          <div>
-            <p class="kicker">PRIVATE ROOM</p>
-            <h2>Upload</h2>
-          </div>
-          <input name="username" type="hidden" autocomplete="username" value="nian" />
-          <label>
-            <span>Key</span>
-            <input name="key" type="password" autocomplete="current-password" required />
-          </label>
-          <label>
-            <span>Title Prefix</span>
-            <input name="titlePrefix" type="text" autocomplete="off" maxlength="18" value="念念" />
-          </label>
-          <label>
-            <span>Photos</span>
-            <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required />
-            <em class="studio-file-count" data-studio-file-count>0 FILES</em>
-          </label>
-          <div class="studio-actions">
-            <button type="submit" data-studio-submit>Send</button>
-            <button type="button" data-action="close-studio">Close</button>
-          </div>
+      <section class="studio-panel" aria-label="Gallery studio" aria-hidden="${state.mode !== VIEW.studio}">
+        <div class="studio-shell">
+          <form class="studio-form studio-login-form">
+            <div>
+              <p class="kicker">PRIVATE ROOM</p>
+              <h2>Studio</h2>
+            </div>
+            <input name="username" type="hidden" autocomplete="username" value="gallery" />
+            <label>
+              <span>Password</span>
+              <input name="password" type="password" autocomplete="current-password" required />
+            </label>
+            <div class="studio-actions">
+              <button type="submit" data-studio-submit>Login</button>
+              <button type="button" data-action="close-studio">Close</button>
+            </div>
+          </form>
+          <section class="studio-admin" data-studio-admin hidden>
+            <header class="studio-admin-head">
+              <div>
+                <p class="kicker">Gallery Manager</p>
+                <h2>Archive</h2>
+              </div>
+              <div class="studio-admin-actions">
+                <button type="button" data-action="admin-refresh">Refresh</button>
+                <button type="button" data-action="admin-logout">Logout</button>
+                <button type="button" data-action="close-studio">Close</button>
+              </div>
+            </header>
+            <div data-studio-admin-body></div>
+          </section>
           <p class="studio-status" role="status"></p>
-        </form>
+        </div>
       </section>
     </section>
   `;
@@ -681,7 +697,10 @@ function renderShell() {
     shadowTotal: app.querySelector('[data-shadow-total]'),
     shadowTotalPrev: app.querySelector('[data-shadow-total-prev]'),
     shell: app.querySelector('.gallery-shell'),
+    studioAdmin: app.querySelector('[data-studio-admin]'),
+    studioAdminBody: app.querySelector('[data-studio-admin-body]'),
     studioFileCount: app.querySelector('[data-studio-file-count]'),
+    studioLoginForm: app.querySelector('.studio-login-form'),
     status: app.querySelector('.studio-status'),
     studioPanel: app.querySelector('.studio-panel'),
     aboutLabel: app.querySelector('[data-about-label]'),
@@ -889,7 +908,23 @@ function attachEvents() {
 
   app.addEventListener('click', (event: any) => {
     const action = event.target.closest('[data-action]');
+    const deletePhoto = event.target.closest('[data-admin-delete-photo]');
+    const reprocessPhoto = event.target.closest('[data-admin-reprocess-photo]');
+    const deleteGroup = event.target.closest('[data-admin-delete-group]');
     const thumb = event.target.closest('[data-index]');
+
+    if (deletePhoto) {
+      onAdminDeletePhoto(deletePhoto.dataset.adminDeletePhoto);
+      return;
+    }
+    if (reprocessPhoto) {
+      onAdminReprocessPhoto(reprocessPhoto.dataset.adminReprocessPhoto);
+      return;
+    }
+    if (deleteGroup) {
+      onAdminDeleteGroup(deleteGroup.dataset.adminDeleteGroup);
+      return;
+    }
 
     if (thumb) {
       const thumbIndex = Number(thumb.dataset.index);
@@ -930,10 +965,17 @@ function attachEvents() {
     }
     if (name === 'studio-link') {
       setMode(VIEW.studio);
-      (app.querySelector('input[name="key"]') as HTMLInputElement | null)?.focus();
+      ensureAdminLoaded();
+      (app.querySelector('input[name="password"]') as HTMLInputElement | null)?.focus();
     }
     if (name === 'close-studio') {
       setMode(VIEW.index);
+    }
+    if (name === 'admin-refresh') {
+      loadAdminGallery();
+    }
+    if (name === 'admin-logout') {
+      onAdminLogout();
     }
   });
 
@@ -943,8 +985,17 @@ function attachEvents() {
   app.addEventListener('mouseout', onMorphLeave);
 
   app.addEventListener('submit', (event: any) => {
-    if (event.target.matches('.studio-form')) {
-      onStudioSubmit(event);
+    if (event.target.matches('.studio-login-form')) {
+      onStudioLogin(event);
+    }
+    if (event.target.matches('.studio-upload-form')) {
+      onAdminPhotoUpload(event);
+    }
+    if (event.target.matches('.studio-group-form')) {
+      onAdminGroupSave(event);
+    }
+    if (event.target.matches('.studio-photo-form')) {
+      onAdminPhotoSave(event);
     }
   });
 
@@ -1296,48 +1347,291 @@ function onKeyDown(event) {
   }
 }
 
-async function onStudioSubmit(event: any) {
+async function ensureAdminLoaded() {
+  if (state.adminLoading) return;
+  state.adminLoading = true;
+  renderStudioAdmin();
+  try {
+    const session = await fetch('/api/admin/session', { cache: 'no-store' }).then((response) => response.json());
+    state.adminAuthenticated = Boolean(session.authenticated);
+    if (state.adminAuthenticated) {
+      await loadAdminGallery();
+    } else {
+      renderStudioAdmin();
+    }
+  } catch (error: any) {
+    setStudioStatus(error.message || 'Studio unavailable.');
+  } finally {
+    state.adminLoading = false;
+    renderStudioAdmin();
+  }
+}
+
+async function loadAdminGallery() {
+  if (!state.adminAuthenticated) return;
+  state.adminLoading = true;
+  renderStudioAdmin();
+  try {
+    state.adminGallery = await adminFetch('/api/admin/gallery');
+    setStudioStatus(`${state.adminGallery.photos.length} photos / ${state.adminGallery.groups.length} groups`);
+  } catch (error: any) {
+    state.adminAuthenticated = false;
+    setStudioStatus(error.message);
+  } finally {
+    state.adminLoading = false;
+    renderStudioAdmin();
+  }
+}
+
+async function onStudioLogin(event: any) {
   event.preventDefault();
   const form = event.currentTarget;
-  const payload = new FormData(form);
-  const files = form.elements.photos?.files || [];
-  const submitButton = form.querySelector('[data-studio-submit]');
-
-  if (!files.length) {
-    galleryEls.status.textContent = 'Choose photos first.';
-    return;
-  }
-
-  form.classList.add('is-uploading');
-  submitButton.disabled = true;
-  form.querySelectorAll('input, button').forEach((control) => {
-    control.disabled = true;
-  });
-  galleryEls.status.textContent = 'Uploading...';
-
+  setStudioStatus('Logging in...');
   try {
-    const response = await fetch('/api/upload', {
+    const response = await fetch('/api/admin/login', {
       method: 'POST',
-      body: payload,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: form.elements.password?.value || '' }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.message || 'Upload failed.');
-    galleryEls.status.textContent = `Uploaded. ${String(result.count).padStart(3, '0')} photos in archive.`;
-    state.photos = normalizePhotos(result.photos);
-    workImageDecodeCache.clear();
-    renderShell();
-    setupScene();
-    resize();
-    setActive(state.photos.length - 1, true);
-    setMode(VIEW.detail);
+    if (!response.ok) throw new Error(result.message || 'Login failed.');
+    form.reset();
+    state.adminAuthenticated = true;
+    await loadAdminGallery();
   } catch (error: any) {
-    galleryEls.status.textContent = error.message;
+    setStudioStatus(error.message);
+  }
+}
+
+async function onAdminLogout() {
+  await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {});
+  state.adminAuthenticated = false;
+  state.adminGallery = { groups: [], photos: [] };
+  setStudioStatus('Logged out.');
+  renderStudioAdmin();
+}
+
+async function onAdminGroupSave(event: any) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const id = form.dataset.groupId;
+  const payload = formJson(form);
+  setStudioStatus(id ? 'Saving group...' : 'Creating group...');
+  try {
+    await adminFetch(id ? `/api/admin/groups/${encodeURIComponent(id)}` : '/api/admin/groups', {
+      method: id ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    await loadAdminGallery();
+  } catch (error: any) {
+    setStudioStatus(error.message);
+  }
+}
+
+async function onAdminDeleteGroup(id) {
+  if (!id || !window.confirm('Delete this group?')) return;
+  setStudioStatus('Deleting group...');
+  try {
+    await adminFetch(`/api/admin/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadAdminGallery();
+  } catch (error: any) {
+    setStudioStatus(error.message);
+  }
+}
+
+async function onAdminPhotoUpload(event: any) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const files = form.elements.photos?.files || [];
+  if (!files.length) {
+    setStudioStatus('Choose photos first.');
+    return;
+  }
+  setStudioStatus('Uploading...');
+  form.classList.add('is-uploading');
+  form.querySelectorAll('input, textarea, select, button').forEach((control) => {
+    control.disabled = true;
+  });
+  try {
+    const result = await adminFetch('/api/admin/photos', {
+      method: 'POST',
+      body: new FormData(form),
+    });
+    state.adminGallery = result;
+    await refreshPublicPhotos();
+    form.reset();
+    updateStudioFileCount(form);
+    setStudioStatus(`Uploaded. ${String(result.count).padStart(3, '0')} photos in gallery.`);
+  } catch (error: any) {
+    setStudioStatus(error.message);
+  } finally {
     form.classList.remove('is-uploading');
-    form.querySelectorAll('input, button').forEach((control) => {
+    form.querySelectorAll('input, textarea, select, button').forEach((control) => {
       control.disabled = false;
     });
-    submitButton.disabled = false;
+    renderStudioAdmin();
   }
+}
+
+async function onAdminPhotoSave(event: any) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const id = form.dataset.photoId;
+  if (!id) return;
+  setStudioStatus('Saving photo...');
+  try {
+    await adminFetch(`/api/admin/photos/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formJson(form)),
+    });
+    await loadAdminGallery();
+    await refreshPublicPhotos();
+  } catch (error: any) {
+    setStudioStatus(error.message);
+  }
+}
+
+async function onAdminDeletePhoto(id) {
+  if (!id || !window.confirm('Delete this photo?')) return;
+  setStudioStatus('Deleting photo...');
+  try {
+    await adminFetch(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadAdminGallery();
+    await refreshPublicPhotos();
+  } catch (error: any) {
+    setStudioStatus(error.message);
+  }
+}
+
+async function onAdminReprocessPhoto(id) {
+  if (!id) return;
+  setStudioStatus('Reprocessing photo...');
+  try {
+    await adminFetch(`/api/admin/photos/${encodeURIComponent(id)}/reprocess`, { method: 'POST' });
+    await loadAdminGallery();
+    await refreshPublicPhotos();
+  } catch (error: any) {
+    setStudioStatus(error.message);
+  }
+}
+
+async function refreshPublicPhotos() {
+  state.photos = await loadPhotos();
+  workImageDecodeCache.clear();
+  renderShell();
+  setupScene();
+  resize();
+  updateUi();
+  if (state.mode === VIEW.studio) {
+    state.adminAuthenticated = true;
+    renderStudioAdmin();
+  }
+}
+
+async function adminFetch(url, options: LooseRecord = {}) {
+  const response = await fetch(url, {
+    ...options,
+    cache: 'no-store',
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.message || 'Admin request failed.');
+  return result;
+}
+
+function renderStudioAdmin() {
+  if (!galleryEls.studioLoginForm || !galleryEls.studioAdmin || !galleryEls.studioAdminBody) return;
+  galleryEls.studioLoginForm.hidden = state.adminAuthenticated;
+  galleryEls.studioAdmin.hidden = !state.adminAuthenticated;
+  if (!state.adminAuthenticated) {
+    galleryEls.studioAdminBody.innerHTML = '';
+    return;
+  }
+  const groups = state.adminGallery.groups || [];
+  const photos = state.adminGallery.photos || [];
+  const groupOptions = groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
+  const groupCards = groups.map((group) => `
+    <form class="studio-group-form studio-admin-row" data-group-id="${escapeHtml(group.id)}">
+      <input name="title" value="${escapeHtml(group.title)}" aria-label="Group title" />
+      <input name="slug" value="${escapeHtml(group.slug)}" aria-label="Group slug" />
+      <input name="sortOrder" type="number" value="${Number(group.sortOrder) || 0}" aria-label="Group order" />
+      <select name="visibility" aria-label="Group visibility">
+        <option value="public" ${group.visibility === 'public' ? 'selected' : ''}>Public</option>
+        <option value="hidden" ${group.visibility === 'hidden' ? 'selected' : ''}>Hidden</option>
+      </select>
+      <textarea name="description" rows="2" aria-label="Group description">${escapeHtml(group.description || '')}</textarea>
+      <button type="submit">Save</button>
+      <button type="button" data-admin-delete-group="${escapeHtml(group.id)}">Delete</button>
+    </form>
+  `).join('');
+  const photoCards = photos.map((photo) => `
+    <form class="studio-photo-form studio-photo-card" data-photo-id="${escapeHtml(photo.id)}">
+      <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
+      <input name="title" value="${escapeHtml(photo.title)}" aria-label="Photo title" />
+      <textarea name="description" rows="3" aria-label="Photo description">${escapeHtml(photo.description || '')}</textarea>
+      <select name="groupId" aria-label="Photo group">
+        ${groups.map((group) => `<option value="${escapeHtml(group.id)}" ${photo.groupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')}
+      </select>
+      <input name="capturedAt" type="date" value="${escapeHtml(String(photo.capturedAt || '').slice(0, 10))}" aria-label="Captured date" />
+      <input name="sortOrder" type="number" value="${Number(photo.sortOrder) || photo.index || 0}" aria-label="Photo order" />
+      <select name="status" aria-label="Photo status">
+        <option value="active" ${photo.status === 'active' ? 'selected' : ''}>Active</option>
+        <option value="hidden" ${photo.status === 'hidden' ? 'selected' : ''}>Hidden</option>
+      </select>
+      <div class="studio-card-actions">
+        <button type="submit">Save</button>
+        <button type="button" data-admin-reprocess-photo="${escapeHtml(photo.id)}">Reprocess</button>
+        <button type="button" data-admin-delete-photo="${escapeHtml(photo.id)}">Delete</button>
+      </div>
+    </form>
+  `).join('');
+
+  galleryEls.studioAdminBody.innerHTML = `
+    <div class="studio-admin-grid">
+      <section>
+        <h3>Groups</h3>
+        <form class="studio-group-form studio-admin-row">
+          <input name="title" placeholder="New group" required />
+          <input name="slug" placeholder="slug" />
+          <input name="sortOrder" type="number" value="${groups.length}" />
+          <select name="visibility">
+            <option value="public">Public</option>
+            <option value="hidden">Hidden</option>
+          </select>
+          <textarea name="description" rows="2" placeholder="Description"></textarea>
+          <button type="submit">Create</button>
+        </form>
+        <div class="studio-list">${groupCards || '<p>No groups yet.</p>'}</div>
+      </section>
+      <section>
+        <h3>Upload</h3>
+        <form class="studio-upload-form studio-admin-row">
+          <select name="groupId" required>${groupOptions}</select>
+          <input name="title" placeholder="Title for single upload" />
+          <input name="titlePrefix" placeholder="Batch prefix" value="Gallery" />
+          <input name="capturedAt" type="date" />
+          <textarea name="description" rows="2" placeholder="Description"></textarea>
+          <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required />
+          <em class="studio-file-count" data-studio-file-count>0 FILES</em>
+          <button type="submit">Upload</button>
+        </form>
+      </section>
+    </div>
+    <section class="studio-photo-section">
+      <h3>Photos</h3>
+      <div class="studio-photo-grid">${photoCards || '<p>No photos yet.</p>'}</div>
+    </section>
+  `;
+}
+
+function formJson(form) {
+  return Object.fromEntries([...new FormData(form).entries()].filter(([, value]) => !(value instanceof File)));
+}
+
+function setStudioStatus(message) {
+  state.adminStatus = message || '';
+  if (galleryEls.status) galleryEls.status.textContent = state.adminStatus;
 }
 
 function updateStudioFileCount(form: any) {
@@ -2437,6 +2731,9 @@ function setMode(mode, options: LooseRecord = {}) {
   if (mode === VIEW.index) {
     state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
   }
+  if (mode === VIEW.studio) {
+    ensureAdminLoaded();
+  }
   if (updateRoute) {
     syncRouteForMode(mode);
   }
@@ -2561,13 +2858,23 @@ function routePathForMode(mode) {
 
 function photoPath(index) {
   const photo = state.photos[index];
+  if (photo?.group && photo.group !== 'default') {
+    return `/g/${photo.group}/${photo.slug || photo.id}`;
+  }
   return photo?.slug ? `/${photo.slug}` : '/';
 }
 
 function getPathRoute() {
   if (isStudioPath()) return { mode: VIEW.studio };
   if (isAboutPath()) return { mode: VIEW.about };
-  const slug = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+  if (parts[0] === 'g' && parts[1]) {
+    if (!parts[2]) return { mode: VIEW.index };
+    const index = state.photos.findIndex((photo) => photo.slug === parts[2] || photo.id === parts[2]);
+    if (index >= 0) return { mode: VIEW.detail, index };
+    return { mode: VIEW.index };
+  }
+  const slug = parts.join('/');
   if (slug) {
     const index = state.photos.findIndex((photo) => photo.slug === slug || photo.id === slug);
     if (index >= 0) return { mode: VIEW.detail, index };
@@ -2593,6 +2900,11 @@ function isStudioPath() {
 
 function isAboutPath() {
   return window.location.pathname.replace(/\/$/, '') === '/about';
+}
+
+function routeGroupSlug() {
+  const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+  return parts[0] === 'g' ? parts[1] || '' : '';
 }
 
 function clamp(value, min, max) {

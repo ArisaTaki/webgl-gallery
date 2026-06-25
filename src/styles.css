@@ -2106,10 +2106,11 @@ a {
 .studio-panel {
   inset: 0;
   display: grid;
-  place-items: center;
+  place-items: start center;
   padding: 22px;
   background: rgba(17, 17, 16, 0.82);
   opacity: 0;
+  overflow: auto;
   pointer-events: none;
   transition: opacity 360ms ease;
 }
@@ -2117,6 +2118,14 @@ a {
 .gallery-shell.is-studio .studio-panel {
   opacity: 1;
   pointer-events: auto;
+}
+
+.studio-shell {
+  display: grid;
+  width: min(1180px, 100%);
+  gap: 12px;
+  margin: auto 0;
+  padding: 24px 0;
 }
 
 .studio-form {
@@ -2127,6 +2136,110 @@ a {
   border: 1px solid rgba(236, 235, 227, 0.2);
   background: rgba(14, 14, 13, 0.94);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+}
+
+.studio-login-form {
+  justify-self: center;
+}
+
+.studio-admin {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-height: calc(100vh - 84px);
+  overflow: auto;
+  padding: clamp(18px, 3vw, 30px);
+  border: 1px solid rgba(236, 235, 227, 0.2);
+  background: rgba(14, 14, 13, 0.94);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+}
+
+.studio-admin[hidden],
+.studio-login-form[hidden] {
+  display: none;
+}
+
+.studio-admin-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.studio-admin-head h2 {
+  margin: 4px 0 0;
+  color: var(--gold);
+  font-family: var(--font-condensed);
+  font-size: clamp(46px, 7vw, 82px);
+  line-height: 0.82;
+  text-transform: uppercase;
+  transform: scaleX(0.72);
+  transform-origin: left center;
+}
+
+.studio-admin-actions,
+.studio-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.studio-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 18px;
+}
+
+.studio-admin h3,
+.studio-photo-section h3 {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.studio-list {
+  display: grid;
+  gap: 8px;
+}
+
+.studio-admin-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.studio-admin-row textarea {
+  grid-column: 1 / -1;
+}
+
+.studio-photo-section {
+  display: grid;
+  gap: 10px;
+}
+
+.studio-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.studio-photo-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(236, 235, 227, 0.16);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.studio-photo-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .kicker {
@@ -2156,7 +2269,10 @@ a {
   text-transform: uppercase;
 }
 
-.studio-form input {
+.studio-form input,
+.studio-admin input,
+.studio-admin select,
+.studio-admin textarea {
   width: 100%;
   min-height: 44px;
   border: 1px solid rgba(236, 235, 227, 0.2);
@@ -2164,6 +2280,12 @@ a {
   background: rgba(255, 255, 255, 0.04);
   color: var(--ink);
   padding: 10px 12px;
+  font: inherit;
+}
+
+.studio-admin textarea {
+  min-height: 76px;
+  resize: vertical;
 }
 
 .studio-file-count {
@@ -2184,7 +2306,8 @@ a {
   gap: 10px;
 }
 
-.studio-form button {
+.studio-form button,
+.studio-admin button {
   min-height: 46px;
   border: 1px solid var(--gold);
   background: var(--gold);
@@ -2192,16 +2315,20 @@ a {
   cursor: pointer;
   font-weight: 800;
   text-transform: uppercase;
+  padding: 0 14px;
 }
 
-.studio-form button[type="button"] {
+.studio-form button[type="button"],
+.studio-admin button[type="button"] {
   min-width: 92px;
   background: transparent;
   color: var(--gold);
 }
 
 .studio-form input:disabled,
-.studio-form button:disabled {
+.studio-form button:disabled,
+.studio-admin input:disabled,
+.studio-admin button:disabled {
   cursor: wait;
   opacity: 0.56;
 }
@@ -2215,6 +2342,21 @@ a {
   margin: 0;
   color: var(--muted);
   font-size: 12px;
+}
+
+@media (max-width: 780px) {
+  .studio-admin-grid,
+  .studio-admin-row {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-admin-head {
+    display: grid;
+  }
+
+  .studio-admin-actions {
+    justify-content: start;
+  }
 }
 
 .mobile-fallback {

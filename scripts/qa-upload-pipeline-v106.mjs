@@ -52,6 +52,12 @@ try {
       GALLERY_UPLOAD_KEY: UPLOAD_KEY,
       NODE_ENV: 'production',
       PORT: String(port),
+      R2_ACCOUNT_ID: '',
+      R2_ACCESS_KEY_ID: '',
+      R2_PRIVATE_BUCKET: '',
+      R2_PUBLIC_BASE_URL: '',
+      R2_PUBLIC_BUCKET: '',
+      R2_SECRET_ACCESS_KEY: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -62,17 +68,22 @@ try {
 
   await waitForServer(serverUrl);
 
-  const emptyManifest = await fetchJson(`${serverUrl}/api/photos`);
+  const emptyResponse = await fetchJson(`${serverUrl}/api/photos`);
+  const emptyManifest = normalizePublicPhotosResponse(emptyResponse);
   const wrongKey = await uploadPhoto({ key: 'wrong-key', titlePrefix: 'QA Kid' });
   const tempAfterWrongKey = await readdir(uploadDir).catch(() => []);
   const rightKey = await uploadPhoto({ key: UPLOAD_KEY, titlePrefix: 'QA Kid' });
-  const manifest = await fetchJson(`${serverUrl}/api/photos`);
+  const photosResponse = await fetchJson(`${serverUrl}/api/photos`);
+  const manifest = normalizePublicPhotosResponse(photosResponse);
   const tempAfterRightKey = await readdir(uploadDir).catch(() => []);
 
   const photo = manifest.photos?.[0];
   const variants = await inspectVariants(photo);
   const failures = [];
 
+  if (!Array.isArray(emptyResponse) || !Array.isArray(photosResponse)) {
+    failures.push('/api/photos must preserve the legacy flat photo array response.');
+  }
   if (emptyManifest.count !== 0) failures.push(`Expected isolated manifest to start empty, got ${JSON.stringify(emptyManifest)}.`);
   if (wrongKey.status !== 401 || wrongKey.body?.ok !== false) {
     failures.push(`Expected wrong upload key to return 401 false, got ${JSON.stringify(wrongKey)}.`);
@@ -84,7 +95,7 @@ try {
   if (manifest.count !== 1 || manifest.photos?.length !== 1) {
     failures.push(`Expected persisted upload manifest count 1, got ${JSON.stringify(manifest)}.`);
   }
-  if (photo?.group !== 'upload' || photo?.index !== 1 || photo?.title !== 'QA Kid 001') {
+  if (photo?.group !== 'default' || photo?.index !== 1 || photo?.title !== 'QA Kid 001') {
     failures.push(`Expected upload metadata group/index/title, got ${JSON.stringify(photo)}`);
   }
   if (!photo?.blurDataUrl?.startsWith('data:image/webp;base64,')) {
@@ -181,6 +192,14 @@ async function fetchJson(url) {
   return response.json();
 }
 
+function normalizePublicPhotosResponse(data) {
+  const photos = Array.isArray(data) ? data : data.photos || [];
+  return {
+    count: photos.length,
+    photos,
+  };
+}
+
 async function uploadPhoto({ key, titlePrefix }) {
   const form = new FormData();
   form.append('key', key);
@@ -201,7 +220,7 @@ async function inspectVariants(photo) {
   const result = {};
   if (!photo) return result;
   for (const key of ['thumb', 'medium', 'large']) {
-    const mediaPath = path.join(mediaDir, path.basename(photo[key] || ''));
+    const mediaPath = path.join(mediaDir, String(photo[key] || '').replace(/^\/media\//, ''));
     const metadata = await sharp(mediaPath).metadata();
     result[key] = {
       format: metadata.format,

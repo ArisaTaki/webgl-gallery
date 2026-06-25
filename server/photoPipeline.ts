@@ -38,23 +38,26 @@ export async function loadManifest(manifestPath) {
     const raw = await readFile(manifestPath, 'utf8');
     const parsed = JSON.parse(raw);
     const photos = Array.isArray(parsed.photos) ? parsed.photos : [];
+    const groups = Array.isArray(parsed.groups) ? parsed.groups : [];
     return {
       count: photos.length,
+      groups,
       photos,
       updatedAt: parsed.updatedAt || null,
     };
   } catch (error) {
     if (error.code === 'ENOENT') {
-      return { count: 0, photos: [], updatedAt: null };
+      return { count: 0, groups: [], photos: [], updatedAt: null };
     }
     throw error;
   }
 }
 
-export async function saveManifest(manifestPath, photos) {
+export async function saveManifest(manifestPath, photos, groups = []) {
   const payload = {
     updatedAt: new Date().toISOString(),
     count: photos.length,
+    groups,
     photos,
   };
   await writeFile(manifestPath, `${JSON.stringify(payload, null, 2)}\n`);
@@ -91,6 +94,23 @@ export async function collectSourceImages(sourceDir) {
 
 export async function processImage({ inputPath, mediaDir, id, sourceName, title }) {
   await mkdir(mediaDir, { recursive: true });
+  const processed = await buildPhotoDerivatives({ inputPath, id, sourceName, title });
+
+  const outputs = {};
+  for (const asset of processed.assets) {
+    if (asset.kind === 'original') continue;
+    await writeFile(path.join(mediaDir, asset.fileName), asset.buffer);
+    outputs[asset.kind] = `/media/${asset.fileName}`;
+  }
+
+  return {
+    ...processed.photo,
+    ...outputs,
+  };
+}
+
+export async function buildPhotoDerivatives({ inputPath, id, sourceName, title }) {
+  const originalBuffer = await readFile(inputPath);
 
   const prepared = await prepareSharpInput(inputPath);
   try {
@@ -103,27 +123,48 @@ export async function processImage({ inputPath, mediaDir, id, sourceName, title 
       .toBuffer();
     const color = await sampleColor(source);
 
-    const outputs = {};
+    const assets: any[] = [
+      {
+        kind: 'original',
+        fileName: `${id}-original${path.extname(sourceName || inputPath) || '.image'}`,
+        buffer: originalBuffer,
+        width: metadata.width || 1,
+        height: metadata.height || 1,
+        sizeBytes: originalBuffer.byteLength,
+        mimeType: metadata.format ? `image/${metadata.format}` : 'application/octet-stream',
+      },
+    ];
+
     for (const variant of variants) {
       const fileName = `${id}-${variant.key}.webp`;
-      await source
+      const { data, info } = await source
         .clone()
         .resize({ width: variant.width, withoutEnlargement: true })
         .webp({ quality: variant.quality, effort: 5 })
-        .toFile(path.join(mediaDir, fileName));
-      outputs[variant.key] = `/media/${fileName}`;
+        .toBuffer({ resolveWithObject: true });
+      assets.push({
+        kind: variant.key,
+        fileName,
+        buffer: data,
+        width: info.width,
+        height: info.height,
+        sizeBytes: data.byteLength,
+        mimeType: 'image/webp',
+      });
     }
 
     return {
-      id,
-      title,
-      sourceName,
-      width: metadata.width || 1,
-      height: metadata.height || 1,
-      aspect: (metadata.width || 1) / (metadata.height || 1),
-      color,
-      blurDataUrl: `data:image/webp;base64,${blur.toString('base64')}`,
-      ...outputs,
+      assets,
+      photo: {
+        id,
+        title,
+        sourceName,
+        width: metadata.width || 1,
+        height: metadata.height || 1,
+        aspect: (metadata.width || 1) / (metadata.height || 1),
+        color,
+        blurDataUrl: `data:image/webp;base64,${blur.toString('base64')}`,
+      },
     };
   } finally {
     await prepared.cleanup();

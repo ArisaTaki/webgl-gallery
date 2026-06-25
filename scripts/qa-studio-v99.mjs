@@ -13,11 +13,11 @@ async function staticChecks() {
   const required = [
     ['studio route', main.includes('/studio')],
     ['secret key buffer', main.includes('state.keyBuffer =') && main.includes("endsWith('nian')")],
-    ['studio form submit', main.includes("fetch('/api/upload'")],
+    ['studio admin login', main.includes("fetch('/api/admin/login'")],
     ['upload key env', server.includes("process.env.GALLERY_UPLOAD_KEY || '13209'")],
     ['multer file limit', server.includes("upload.array('photos', 24)")],
     ['webp variants', pipeline.includes("{ key: 'thumb'") && pipeline.includes("{ key: 'large'")],
-    ['readme studio docs', readme.includes('http://localhost:5279/studio') && readme.includes('默认上传 key 是 `13209`')],
+    ['readme studio docs', readme.includes('http://localhost:5279/studio') && readme.includes('GALLERY_ADMIN_PASSWORD_HASH')],
   ];
   return required.filter(([, ok]) => !ok).map(([name]) => `Missing static studio check: ${name}`);
 }
@@ -118,7 +118,6 @@ async function sample(client, label) {
       const form = document.querySelector('.studio-form');
       const style = panel ? getComputedStyle(panel) : null;
       const visible = Boolean(panel && panel.getBoundingClientRect().width > 0 && panel.getBoundingClientRect().height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0');
-      const fileCount = document.querySelector('[data-studio-file-count]')?.textContent?.trim();
       return {
         label: ${JSON.stringify(label)},
         mode: document.querySelector('.gallery-shell')?.dataset.mode || '',
@@ -126,10 +125,8 @@ async function sample(client, label) {
         visible,
         ariaHidden: panel?.getAttribute('aria-hidden') || '',
         inert: panel?.hasAttribute('inert') || false,
-        hasKeyInput: Boolean(form?.querySelector('input[name="key"][type="password"]')),
-        hasTitlePrefix: Boolean(form?.querySelector('input[name="titlePrefix"]')),
-        hasFileInput: Boolean(form?.querySelector('input[name="photos"][type="file"]')),
-        fileCount,
+        hasPasswordInput: Boolean(form?.querySelector('input[name="password"][type="password"]')),
+        hasAdminPanel: Boolean(document.querySelector('[data-studio-admin]')),
         submitText: form?.querySelector('[data-studio-submit]')?.textContent?.trim() || '',
       };
     })()`,
@@ -142,10 +139,11 @@ async function manifestSample(client) {
     `fetch('/api/photos', { cache: 'no-store' })
       .then((response) => response.json())
       .then((data) => ({
-        count: data.count,
-        photos: Array.isArray(data.photos) ? data.photos.length : -1,
-        first: data.photos?.[0]?.id || '',
-        last: data.photos?.at(-1)?.id || '',
+        isArray: Array.isArray(data),
+        count: Array.isArray(data) ? data.length : data.count,
+        photos: (Array.isArray(data) ? data : data.photos || []).length,
+        first: (Array.isArray(data) ? data : data.photos || [])[0]?.id || '',
+        last: (Array.isArray(data) ? data : data.photos || []).at(-1)?.id || '',
       }))`,
   );
 }
@@ -184,15 +182,12 @@ async function run() {
       if (state.mode !== 'studio' || !state.visible || state.ariaHidden !== 'false' || state.inert) {
         failures.push(`Studio panel not visible/interactive for ${state.label}: ${JSON.stringify(state)}`);
       }
-      if (!state.hasKeyInput || !state.hasTitlePrefix || !state.hasFileInput || state.submitText !== 'Send') {
-        failures.push(`Studio form missing expected controls for ${state.label}: ${JSON.stringify(state)}`);
-      }
-      if (state.fileCount !== '0 FILES') {
-        failures.push(`Expected initial file count 0 FILES for ${state.label}, got ${state.fileCount}`);
+      if (!state.hasPasswordInput || !state.hasAdminPanel || state.submitText !== 'Login') {
+        failures.push(`Studio login shell missing expected controls for ${state.label}: ${JSON.stringify(state)}`);
       }
     }
 
-    if (manifest.count !== 17 || manifest.photos !== 17 || manifest.first !== 'source-000001') {
+    if (!manifest.isArray || manifest.count !== 17 || manifest.photos !== 17 || manifest.first !== 'source-000001') {
       failures.push(`Unexpected /api/photos manifest sample: ${JSON.stringify(manifest)}`);
     }
 
