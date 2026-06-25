@@ -2,11 +2,11 @@ import crypto from 'node:crypto';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { and, asc, eq, ne } from 'drizzle-orm';
 import { createDatabase } from './db/client.js';
 import { galleryGroups, photoAssets, photos as photoRows } from './db/schema.js';
 import { buildPhotoDerivatives, ensureGalleryDirs, loadManifest, saveManifest } from './photoPipeline.js';
+import { getBuiltinDatabaseSync, sqliteUnavailableMessage } from './sqlite.js';
 import { createStorage } from './storage.js';
 import {
   DEFAULT_GROUP_ID,
@@ -26,18 +26,19 @@ export function createGalleryStore({ dataDir, manifestPath, mediaDir, originalDi
   const databaseConfig = runtimeConfig?.database || {};
   const storageConfig = runtimeConfig?.storage || {};
   const storage = createStorage({ mediaDir, originalDir, storageConfig });
+  const activeManifestPath = databaseConfig.manifestPath || manifestPath;
   if (databaseConfig.kind === 'postgres' || process.env.DATABASE_URL) {
     const database = createDatabase(databaseConfig.databaseUrl || process.env.DATABASE_URL);
     return new PostgresGalleryStore({ database, storage });
   }
-  if (databaseConfig.kind === 'sqlite' || process.env.GALLERY_SQLITE_PATH) {
+  if ((databaseConfig.kind === 'sqlite' || process.env.GALLERY_SQLITE_PATH) && databaseConfig.sqliteAvailable !== false) {
     return new SqliteGalleryStore({
       sqlitePath: databaseConfig.sqlitePath || process.env.GALLERY_SQLITE_PATH,
-      manifestPath,
+      manifestPath: activeManifestPath,
       storage,
     });
   }
-  return new ManifestGalleryStore({ dataDir, manifestPath, mediaDir, originalDir, storage, uploadDir });
+  return new ManifestGalleryStore({ dataDir, manifestPath: activeManifestPath, mediaDir, originalDir, storage, uploadDir });
 }
 
 class ManifestGalleryStore {
@@ -281,6 +282,8 @@ class SqliteGalleryStore {
 
   async init() {
     await mkdir(path.dirname(this.sqlitePath), { recursive: true });
+    const DatabaseSync = await getBuiltinDatabaseSync();
+    if (!DatabaseSync) throw httpError(503, sqliteUnavailableMessage());
     this.sqlite = new DatabaseSync(this.sqlitePath);
     this.sqlite.exec(`
       PRAGMA foreign_keys = ON;

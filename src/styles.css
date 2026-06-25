@@ -2152,6 +2152,12 @@ a {
   gap: 18px;
 }
 
+.setup-head-side {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
 .setup-head h2 {
   margin: 4px 0 0;
   color: var(--gold);
@@ -2169,6 +2175,19 @@ a {
   gap: 6px;
   justify-content: flex-end;
   max-width: 460px;
+}
+
+.setup-language {
+  display: grid;
+  grid-template-columns: auto 128px;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-language span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
 }
 
 .setup-check {
@@ -2206,6 +2225,13 @@ a {
   font-size: 11px;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+.setup-note {
+  margin: 0;
+  color: rgba(236, 235, 227, 0.62);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .setup-grid {
@@ -2504,6 +2530,14 @@ a {
   .setup-head,
   .setup-actions {
     display: grid;
+  }
+
+  .setup-head-side {
+    justify-items: start;
+  }
+
+  .setup-language {
+    grid-template-columns: 1fr;
   }
 
   .setup-checks {

@@ -2,17 +2,23 @@ import crypto from 'node:crypto';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { constants } from 'node:fs';
-import { DatabaseSync } from 'node:sqlite';
 import { createPasswordHash } from './auth.js';
+import { getBuiltinDatabaseSync, hasBuiltinSqlite, sqliteUnavailableMessage } from './sqlite.js';
 import { hasR2Config } from './storage.js';
 
 export async function loadRuntimeConfig(paths) {
   const configPath = getRuntimeConfigPath(paths);
   const configDir = path.dirname(configPath);
+  const sqliteAvailable = await hasBuiltinSqlite();
   const fileConfig = await readConfigFile(configPath);
-  const config = mergeConfig(defaultRuntimeConfig({ ...paths, configDir }), fileConfig || {});
+  const config = mergeConfig(defaultRuntimeConfig({ ...paths, configDir, sqliteAvailable }), fileConfig || {});
   const envOverrides = envRuntimeOverrides();
   const effectiveConfig = mergeConfig(config, envOverrides);
+  effectiveConfig.database.sqliteAvailable = sqliteAvailable;
+  if (effectiveConfig.database.kind === 'sqlite' && !sqliteAvailable) {
+    effectiveConfig.setupComplete = false;
+    effectiveConfig.database.issue = sqliteUnavailableMessage();
+  }
   if (!fileConfig && hasExplicitRuntimeEnv()) {
     effectiveConfig.setupComplete = true;
   }
@@ -27,13 +33,15 @@ export async function loadRuntimeConfig(paths) {
 export async function saveRuntimeConfig(paths, currentRuntime, input) {
   const configPath = getRuntimeConfigPath(paths);
   const configDir = path.dirname(configPath);
-  const nextConfig = normalizeSetupInput({
+  const sqliteAvailable = await hasBuiltinSqlite();
+  const nextConfig: any = normalizeSetupInput({
     input,
-    currentConfig: currentRuntime?.config || defaultRuntimeConfig({ ...paths, configDir }),
+    currentConfig: currentRuntime?.config || defaultRuntimeConfig({ ...paths, configDir, sqliteAvailable }),
     paths,
     configDir,
   });
   await validateRuntimeConfig(nextConfig);
+  nextConfig.database.sqliteAvailable = sqliteAvailable;
   await mkdir(configDir, { recursive: true });
   await writeFile(configPath, `${JSON.stringify(redactRuntimeConfig(nextConfig, { keepSecrets: true }), null, 2)}\n`);
   applyRuntimeConfigToEnv(nextConfig);
@@ -49,7 +57,10 @@ export function publicSetupStatus(runtime) {
   const database = {
     kind: config.database.kind,
     configured: isDatabaseConfigured(config.database),
+    issue: config.database.issue || '',
+    manifestPath: config.database.kind === 'json' ? config.database.manifestPath : '',
     sqlitePath: config.database.kind === 'sqlite' ? config.database.sqlitePath : '',
+    sqliteAvailable: Boolean(config.database.sqliteAvailable),
     hasDatabaseUrl: Boolean(config.database.databaseUrl),
   };
   const storage = {
@@ -62,7 +73,7 @@ export function publicSetupStatus(runtime) {
   };
   return {
     ok: true,
-    configured: Boolean(config.setupComplete),
+    configured: Boolean(config.setupComplete && isDatabaseConfigured(config.database) && isStorageConfigured(config.storage)),
     configPath: runtime.configPath,
     database,
     storage,
@@ -74,14 +85,22 @@ export function publicSetupStatus(runtime) {
   };
 }
 
-export function defaultRuntimeConfig({ configDir, mediaDir, originalDir }) {
+export function defaultRuntimeConfig({ configDir, mediaDir, originalDir, manifestPath, sqliteAvailable = true }) {
   return {
     version: 1,
     setupComplete: false,
-    database: {
-      kind: 'sqlite',
-      sqlitePath: path.join(configDir, 'gallery.sqlite'),
-    },
+    database: sqliteAvailable
+      ? {
+          kind: 'sqlite',
+          sqlitePath: path.join(configDir, 'gallery.sqlite'),
+          sqliteAvailable,
+        }
+      : {
+          kind: 'json',
+          manifestPath,
+          sqliteAvailable,
+          issue: sqliteUnavailableMessage(),
+        },
     storage: {
       kind: 'local',
       mediaDir,
@@ -111,15 +130,7 @@ function normalizeSetupInput({ input, currentConfig, paths, configDir }) {
   return {
     version: 1,
     setupComplete: true,
-    database: databaseKind === 'postgres'
-      ? {
-          kind: 'postgres',
-          databaseUrl: String(body.databaseUrl || currentConfig.database?.databaseUrl || process.env.DATABASE_URL || ''),
-        }
-      : {
-          kind: 'sqlite',
-          sqlitePath: path.resolve(String(body.sqlitePath || currentConfig.database?.sqlitePath || path.join(configDir, 'gallery.sqlite'))),
-        },
+    database: normalizeDatabaseConfig({ body, currentConfig, databaseKind, paths, configDir }),
     storage: storageKind === 'r2'
       ? {
           kind: 'r2',
@@ -146,16 +157,21 @@ function normalizeSetupInput({ input, currentConfig, paths, configDir }) {
 
 async function validateRuntimeConfig(config) {
   if (!isDatabaseConfigured(config.database)) {
-    throw httpError(400, config.database.kind === 'postgres' ? 'Database URL is required.' : 'SQLite path is required.');
+    throw httpError(400, databaseRequiredMessage(config.database.kind));
   }
   if (!isStorageConfigured(config.storage)) {
     throw httpError(400, 'R2 storage requires account id, access keys, both buckets, and public base URL.');
   }
   if (config.database.kind === 'sqlite') {
+    const DatabaseSync = await getBuiltinDatabaseSync();
+    if (!DatabaseSync) throw httpError(400, sqliteUnavailableMessage());
     await mkdir(path.dirname(config.database.sqlitePath), { recursive: true });
     const db = new DatabaseSync(config.database.sqlitePath);
     db.exec('PRAGMA user_version');
     db.close();
+  }
+  if (config.database.kind === 'json') {
+    await mkdir(path.dirname(config.database.manifestPath), { recursive: true });
   }
   if (config.storage.kind === 'local') {
     await mkdir(config.storage.mediaDir, { recursive: true });
@@ -166,9 +182,10 @@ async function validateRuntimeConfig(config) {
 }
 
 function isDatabaseConfigured(database) {
-  return database?.kind === 'postgres'
-    ? Boolean(database.databaseUrl || process.env.DATABASE_URL)
-    : Boolean(database?.sqlitePath);
+  if (database?.kind === 'postgres') return Boolean(database.databaseUrl || process.env.DATABASE_URL);
+  if (database?.kind === 'sqlite') return Boolean(database?.sqlitePath) && database.sqliteAvailable !== false;
+  if (database?.kind === 'json') return Boolean(database?.manifestPath);
+  return false;
 }
 
 function isStorageConfigured(storage) {
@@ -179,11 +196,14 @@ function buildSetupChecks(config) {
   return [
     {
       key: 'database',
-      label: config.database.kind === 'postgres' ? 'Postgres metadata' : 'Local SQLite metadata',
+      kind: config.database.kind,
+      issue: config.database.issue || '',
+      label: databaseCheckLabel(config.database.kind),
       ok: isDatabaseConfigured(config.database),
     },
     {
       key: 'storage',
+      kind: config.storage.kind,
       label: config.storage.kind === 'r2' ? 'Cloudflare R2 image storage' : 'Local image storage',
       ok: isStorageConfigured(config.storage),
     },
@@ -206,6 +226,11 @@ function envRuntimeOverrides() {
     overrides.database = {
       kind: 'sqlite',
       sqlitePath: path.resolve(process.env.GALLERY_SQLITE_PATH),
+    };
+  } else if (process.env.GALLERY_MANIFEST_PATH) {
+    overrides.database = {
+      kind: 'json',
+      manifestPath: path.resolve(process.env.GALLERY_MANIFEST_PATH),
     };
   }
   if (hasR2Config()) {
@@ -231,7 +256,38 @@ function envRuntimeOverrides() {
 }
 
 function hasExplicitRuntimeEnv() {
-  return Boolean(process.env.DATABASE_URL || process.env.GALLERY_SQLITE_PATH || hasR2Config());
+  return Boolean(process.env.DATABASE_URL || process.env.GALLERY_SQLITE_PATH || process.env.GALLERY_MANIFEST_PATH || hasR2Config());
+}
+
+function normalizeDatabaseConfig({ body, currentConfig, databaseKind, paths, configDir }) {
+  if (databaseKind === 'postgres') {
+    return {
+      kind: 'postgres',
+      databaseUrl: String(body.databaseUrl || currentConfig.database?.databaseUrl || process.env.DATABASE_URL || ''),
+    };
+  }
+  if (databaseKind === 'json') {
+    return {
+      kind: 'json',
+      manifestPath: path.resolve(String(body.manifestPath || currentConfig.database?.manifestPath || paths.manifestPath)),
+    };
+  }
+  return {
+    kind: 'sqlite',
+    sqlitePath: path.resolve(String(body.sqlitePath || currentConfig.database?.sqlitePath || path.join(configDir, 'gallery.sqlite'))),
+  };
+}
+
+function databaseRequiredMessage(kind) {
+  if (kind === 'postgres') return 'Database URL is required.';
+  if (kind === 'json') return 'JSON manifest path is required.';
+  return 'SQLite path is required.';
+}
+
+function databaseCheckLabel(kind) {
+  if (kind === 'postgres') return 'Postgres metadata';
+  if (kind === 'json') return 'Local JSON metadata';
+  return 'Local SQLite metadata';
 }
 
 async function readConfigFile(configPath) {

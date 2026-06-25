@@ -13,7 +13,7 @@
     "migrate:manifest": "tsx scripts/migrate-manifest-to-db.ts",
     "preview": "NODE_ENV=production tsx server/index.ts",
     "sync:photos": "tsx scripts/sync-photos.ts",
-    "test": "tsx scripts/qa-gallery-core.ts && node scripts/qa-admin-api-v112.mjs && node scripts/qa-setup-wizard-v1.mjs",
+    "test": "tsx scripts/qa-gallery-core.ts && node scripts/qa-admin-api-v112.mjs && node scripts/qa-setup-wizard-v1.mjs && node scripts/qa-setup-no-sqlite-v1.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -21,10 +21,15 @@ http://localhost:5279
 http://localhost:5279/setup
 ```
 
-推荐先选择默认的 `Local SQLite` + `Local folder`，填一个后台密码后保存。这样不需要 R2、Postgres、Docker 或图床服务，马上就能用 `/studio` 上传和管理相册。配置会写到本地私有目录：
+推荐先选择默认的 `Local SQLite` + `Local folder`，填一个后台密码后保存。这样不需要 R2、Postgres、Docker 或图床服务，马上就能用 `/studio` 上传和管理相册。设置页支持中文和英文，可以右上角切换语言。
+
+SQLite 不需要用户额外安装系统 SQLite；项目优先使用 Node.js 自带的 `node:sqlite`。如果当前 Node 版本不支持内置 SQLite，应用仍然会正常启动到 `/setup`，并自动提供 `Local JSON fallback` 兼容模式，也可以改选 Postgres。建议普通本地使用升级到 Node 24+ 后继续选择 SQLite。
+
+配置会写到本地私有目录：
 
 - `.gallery/config.json`: 一键启动配置和后台密码 hash
 - `.gallery/gallery.sqlite`: 本地 SQL 元数据
+- `public/data/photos.json`: JSON 兼容模式元数据
 - `public/media/`: 公开缩略图和 WebP 派生图
 - `.uploads/originals/`: 本地原图备份
 
@@ -47,7 +52,7 @@ npx tsx -e "import { createPasswordHash } from './server/auth.ts'; console.log(c
 GALLERY_ADMIN_PASSWORD_HASH="scrypt:..." SESSION_SECRET="long-random-secret" npm run dev
 ```
 
-服务端也支持 `GALLERY_CONFIG_PATH`、`GALLERY_DATA_DIR`、`GALLERY_MEDIA_DIR`、`GALLERY_UPLOAD_DIR`、`GALLERY_ORIGINAL_DIR`、`GALLERY_MANIFEST_PATH` 和 `GALLERY_SQLITE_PATH` 覆盖本地路径，主要用于隔离测试或临时部署。上传管线的端到端验证：
+服务端也支持 `GALLERY_CONFIG_PATH`、`GALLERY_DATA_DIR`、`GALLERY_MEDIA_DIR`、`GALLERY_UPLOAD_DIR`、`GALLERY_ORIGINAL_DIR`、`GALLERY_MANIFEST_PATH`、`GALLERY_SQLITE_PATH` 和 `GALLERY_DISABLE_SQLITE=1` 覆盖或模拟本地路径，主要用于隔离测试或临时部署。上传管线的端到端验证：
 
 ```bash
 node scripts/qa-upload-pipeline-v106.mjs
