@@ -105,6 +105,7 @@ const SETUP_COPY = {
     set: 'SET',
     setAdminPassword: 'Set admin password',
     setup: 'Setup',
+    setupTitle: 'Configure gallery',
     setupFailed: 'Setup failed.',
     setupSaved: 'Setup saved. Opening studio...',
     sqliteCheck: 'Local SQLite metadata',
@@ -153,6 +154,7 @@ const SETUP_COPY = {
     set: '设置',
     setAdminPassword: '设置后台密码',
     setup: '设置',
+    setupTitle: '配置画廊',
     setupFailed: '设置失败。',
     setupSaved: '设置已保存，正在打开后台...',
     sqliteCheck: '本地 SQLite 元数据',
@@ -589,7 +591,7 @@ function renderShell() {
     <section class="gallery-shell is-${state.mode}" data-mode="${state.mode}">
       <section class="mobile-fallback" aria-label="移动端提示">
         <header class="mobile-fallback-top">
-          <strong>NIANNIAN</strong>
+          <strong>IROP GALLERY</strong>
           <span>FAMILY PHOTO ARCHIVE<br />AVAILABLE LOCAL ↗</span>
         </header>
         <h1>13209<br />MEMORY</h1>
@@ -611,7 +613,10 @@ function renderShell() {
       </div>
 
       <header class="corner corner-left">
-        <a class="wordmark split-word" href="/" aria-label="念念 memory gallery">${splitLabelHtml('NIANNIAN')}</a>
+        <a class="wordmark" href="/" aria-label="irop gallery">
+          <span>irop</span>
+          <span>gallery</span>
+        </a>
       </header>
 
       <canvas class="pagination-canvas" aria-hidden="true"></canvas>
@@ -903,17 +908,16 @@ function setupPanelHtml() {
       <form class="setup-form">
         <header class="setup-head">
           <div>
+            <p class="setup-brand">irop gallery</p>
             <p class="kicker">${escapeHtml(setupT('firstRun'))}</p>
-            <h2>${escapeHtml(setupT('setup'))}</h2>
+            <h2>${escapeHtml(setupT('setupTitle'))}</h2>
           </div>
           <div class="setup-head-side">
-            <label class="setup-language">
+            <div class="setup-language" role="group" aria-label="${escapeHtml(setupT('language'))}">
               <span>${escapeHtml(setupT('language'))}</span>
-              <select name="setupLanguage" data-setup-language>
-                <option value="zh" ${state.setupLanguage === 'zh' ? 'selected' : ''}>中文</option>
-                <option value="en" ${state.setupLanguage === 'en' ? 'selected' : ''}>English</option>
-              </select>
-            </label>
+              <button type="button" data-setup-language="zh" class="${state.setupLanguage === 'zh' ? 'is-active' : ''}">中文</button>
+              <button type="button" data-setup-language="en" class="${state.setupLanguage === 'en' ? 'is-active' : ''}">EN</button>
+            </div>
             <div class="setup-checks">
               ${checks || `<span class="setup-check is-warn"><i>${escapeHtml(setupT('set'))}</i>${escapeHtml(setupT('localSetup'))}</span>`}
             </div>
@@ -1205,8 +1209,17 @@ function attachEvents() {
     const deletePhoto = event.target.closest('[data-admin-delete-photo]');
     const reprocessPhoto = event.target.closest('[data-admin-reprocess-photo]');
     const deleteGroup = event.target.closest('[data-admin-delete-group]');
+    const setupLanguageButton = event.target.closest('[data-setup-language]');
     const thumb = event.target.closest('[data-index]');
 
+    if (setupLanguageButton) {
+      state.setupLanguage = setupLanguageButton.dataset.setupLanguage === 'en' ? 'en' : 'zh';
+      localStorage.setItem('gallery_setup_language', state.setupLanguage);
+      state.setupMessage = '';
+      renderShell();
+      updateUi();
+      return;
+    }
     if (deletePhoto) {
       onAdminDeletePhoto(deletePhoto.dataset.adminDeletePhoto);
       return;
@@ -1303,14 +1316,6 @@ function attachEvents() {
   });
 
   app.addEventListener('change', (event: any) => {
-    if (event.target.matches('[data-setup-language]')) {
-      state.setupLanguage = event.target.value === 'en' ? 'en' : 'zh';
-      localStorage.setItem('gallery_setup_language', state.setupLanguage);
-      state.setupMessage = '';
-      renderShell();
-      updateUi();
-      return;
-    }
     if (event.target.matches('.setup-form select')) {
       updateSetupVisibility();
     }
