@@ -2317,7 +2317,8 @@ function updateMotionLatency() {
   state.rotateLatency = clamp(state.motionLagPx / (500 / rotateLimit), -rotateLimit, rotateLimit);
 }
 
-function layoutPlane(mesh, elapsed) {
+function layoutPlane(mesh, elapsed, options: LooseRecord = {}) {
+  const snap = Boolean(options.snap);
   const { index, uniforms } = mesh.userData;
   const metrics = getReferenceMetrics();
   const planeMode = getPlaneSourceMode();
@@ -2443,7 +2444,10 @@ function layoutPlane(mesh, elapsed) {
         ? DETAIL_EXIT_EARLY_PLANE_EASE
         : 0.07;
   const detachScrollFromPlaneX = planeMode === VIEW.detail || planeMode === VIEW.work;
-  if (detachScrollFromPlaneX) {
+  if (snap) {
+    mesh.position.x = target.x;
+    mesh.userData.detachedPlaneX = mesh.position.x + state.scroll;
+  } else if (detachScrollFromPlaneX) {
     const detachedTargetX = target.x + state.scroll;
     const detachedStartX = Number.isFinite(mesh.userData.detachedPlaneX)
       ? mesh.userData.detachedPlaneX
@@ -2454,16 +2458,16 @@ function layoutPlane(mesh, elapsed) {
     mesh.position.x = damp(mesh.position.x, target.x, geometryEase);
     mesh.userData.detachedPlaneX = mesh.position.x + state.scroll;
   }
-  mesh.position.y = damp(mesh.position.y, target.y, geometryEase);
-  mesh.position.z = damp(mesh.position.z, target.z, geometryEase);
-  mesh.scale.x = damp(mesh.scale.x, target.width, geometryEase);
-  mesh.scale.y = damp(mesh.scale.y, target.height, geometryEase);
+  mesh.position.y = snap ? target.y : damp(mesh.position.y, target.y, geometryEase);
+  mesh.position.z = snap ? target.z : damp(mesh.position.z, target.z, geometryEase);
+  mesh.scale.x = snap ? target.width : damp(mesh.scale.x, target.width, geometryEase);
+  mesh.scale.y = snap ? target.height : damp(mesh.scale.y, target.height, geometryEase);
   const rotateTarget = state.mode === VIEW.index ? clamp(state.rotateLatency * -0.4, -0.72, 0.72) : 0;
-  mesh.rotation.y = damp(mesh.rotation.y, rotateTarget, 0.1);
+  mesh.rotation.y = snap ? rotateTarget : damp(mesh.rotation.y, rotateTarget, 0.1);
 
   const alphaEase = target.alpha <= 0.001 ? 0.23 : 0.07;
-  uniforms.uAlpha.value = damp(uniforms.uAlpha.value, target.alpha, alphaEase);
-  uniforms.uColorMix.value = damp(uniforms.uColorMix.value, target.color, 0.1);
+  uniforms.uAlpha.value = snap ? target.alpha : damp(uniforms.uAlpha.value, target.alpha, alphaEase);
+  uniforms.uColorMix.value = snap ? target.color : damp(uniforms.uColorMix.value, target.color, 0.1);
   const curveTarget = clamp(state.curveLatency + state.switchPulse * 0.08 * (1 - t), 0, 1);
   const radiusTarget = mix(metrics.curveRadiusWorld, 0.62, t);
   const detailMultiply = detailLarge ? 0 : activeMultiply;
@@ -2472,24 +2476,24 @@ function layoutPlane(mesh, elapsed) {
   const detailPhotoY = 0;
   const workPhotoY = detailLarge ? -0.1 : detailPhotoY;
   const photoYTarget = mix(mix(0, detailPhotoY, t), workPhotoY, workT);
-  uniforms.uCurve.value = damp(uniforms.uCurve.value, curveTarget, 0.11);
-  uniforms.uCurveRadius.value = damp(uniforms.uCurveRadius.value, radiusTarget, 0.12);
-  uniforms.uDetail.value = damp(uniforms.uDetail.value, t, 0.08);
-  uniforms.uHover.value = damp(uniforms.uHover.value, homeHover, 0.12);
-  uniforms.uIntro.value = damp(uniforms.uIntro.value, intro, 0.18);
+  uniforms.uCurve.value = snap ? curveTarget : damp(uniforms.uCurve.value, curveTarget, 0.11);
+  uniforms.uCurveRadius.value = snap ? radiusTarget : damp(uniforms.uCurveRadius.value, radiusTarget, 0.12);
+  uniforms.uDetail.value = snap ? t : damp(uniforms.uDetail.value, t, 0.08);
+  uniforms.uHover.value = snap ? homeHover : damp(uniforms.uHover.value, homeHover, 0.12);
+  uniforms.uIntro.value = snap ? intro : damp(uniforms.uIntro.value, intro, 0.18);
   uniforms.uMouse.value.lerp(pointer, 0.08);
-  uniforms.uMultiply.value = damp(uniforms.uMultiply.value, multiplyTarget, 0.1);
-  uniforms.uPhotoY.value = damp(uniforms.uPhotoY.value, photoYTarget, 0.1);
-  uniforms.uTextureScale.value = damp(uniforms.uTextureScale.value, target.scale, 0.1);
+  uniforms.uMultiply.value = snap ? multiplyTarget : damp(uniforms.uMultiply.value, multiplyTarget, 0.1);
+  uniforms.uPhotoY.value = snap ? photoYTarget : damp(uniforms.uPhotoY.value, photoYTarget, 0.1);
+  uniforms.uTextureScale.value = snap ? target.scale : damp(uniforms.uTextureScale.value, target.scale, 0.1);
   const planeAspect = Math.max(0.01, mesh.scale.x / Math.max(mesh.scale.y, 0.01));
   uniforms.uPlaneAspect.value = planeAspect;
   const uvScale = getReferenceUvScale(uniforms.uImageAspect.value, planeAspect, uniforms.uTextureScale.value);
   uniforms.uUvScale.value.set(uvScale.x, uvScale.y);
   uniforms.uTime.value = elapsed + index * 0.071;
-  uniforms.uTransition.value = damp(uniforms.uTransition.value, state.transition, 0.1);
-  uniforms.uVelocity.value = damp(uniforms.uVelocity.value, state.velocity * 46, 0.08);
-  uniforms.uSwitch.value = damp(uniforms.uSwitch.value, state.switchPulse, 0.16);
-  uniforms.uSwitchDirection.value = damp(uniforms.uSwitchDirection.value, state.switchDirection, 0.22);
+  uniforms.uTransition.value = snap ? state.transition : damp(uniforms.uTransition.value, state.transition, 0.1);
+  uniforms.uVelocity.value = snap ? state.velocity * 46 : damp(uniforms.uVelocity.value, state.velocity * 46, 0.08);
+  uniforms.uSwitch.value = snap ? state.switchPulse : damp(uniforms.uSwitch.value, state.switchPulse, 0.16);
+  uniforms.uSwitchDirection.value = snap ? state.switchDirection : damp(uniforms.uSwitchDirection.value, state.switchDirection, 0.22);
   uniforms.uWorldToPx.value = metrics.worldToPx;
 
   const currentPlaneRectPx = meshPixelRect(mesh, metrics);
@@ -3025,6 +3029,7 @@ function setWorkIndex(index) {
 function setMode(mode, options: LooseRecord = {}) {
   const { updateRoute = true } = options;
   const previousMode = state.mode;
+  const exitingOverlayToIndex = mode === VIEW.index && (previousMode === VIEW.setup || previousMode === VIEW.studio);
   let shouldPrimeWorkMotion = false;
   let preserveWorkFx = false;
   if (mode === VIEW.about && previousMode !== VIEW.about) {
@@ -3102,12 +3107,29 @@ function setMode(mode, options: LooseRecord = {}) {
   }
   if (mode === VIEW.index) {
     state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
+    if (exitingOverlayToIndex) settleIndexSurface();
   }
   if (mode === VIEW.studio) {
     ensureAdminLoaded();
   }
   if (updateRoute) {
     syncRouteForMode(mode);
+  }
+}
+
+function settleIndexSurface() {
+  state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
+  state.scroll = state.targetScroll;
+  state.velocity = 0;
+  state.detailMix = 0;
+  state.workMix = 0;
+  state.scrollLatencyPx = 0;
+  state.paginationOpen = 0;
+  state.paginationHoverIndex = -1;
+  state.detailEntryStartedAt = 0;
+  state.detailExitStartedAt = 0;
+  for (const mesh of planes) {
+    layoutPlane(mesh, clock.elapsedTime, { snap: true });
   }
 }
 
