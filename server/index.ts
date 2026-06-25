@@ -7,6 +7,7 @@ import { createServer as createViteServer } from 'vite';
 import { clearAdminSessionCookie, createAdminSessionCookie, isAdminRequest, requireAdmin, verifyAdminPassword } from './auth.js';
 import { createGalleryStore } from './galleryStore.js';
 import { ensureGalleryDirs } from './photoPipeline.js';
+import { loadRuntimeConfig, publicSetupStatus, saveRuntimeConfig } from './runtimeConfig.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -21,10 +22,19 @@ const port = Number(process.env.PORT || 5279);
 const uploadKey = process.env.GALLERY_UPLOAD_KEY || '13209';
 const isProduction = process.env.NODE_ENV === 'production';
 const disableHmr = process.env.GALLERY_DISABLE_HMR === '1';
+const runtimePaths = { root, publicDir, dataDir, mediaDir, uploadDir, originalDir, manifestPath };
 
 await ensureGalleryDirs({ dataDir, mediaDir, uploadDir });
 await mkdir(originalDir, { recursive: true });
-const galleryStore = createGalleryStore({ dataDir, manifestPath, mediaDir, originalDir, uploadDir });
+let runtime = await loadRuntimeConfig(runtimePaths);
+let galleryStore = createGalleryStore({
+  dataDir,
+  manifestPath,
+  mediaDir,
+  originalDir,
+  uploadDir,
+  runtimeConfig: runtime.config,
+});
 await galleryStore.init();
 
 const app = express();
@@ -37,8 +47,24 @@ const upload = multer({
 });
 
 app.use(express.json());
-app.use('/media', express.static(mediaDir, { maxAge: isProduction ? '30d' : 0 }));
+app.use('/media', (request, response, next) => {
+  express.static(publicMediaDir(), { maxAge: isProduction ? '30d' : 0 })(request, response, next);
+});
 app.use('/data', express.static(dataDir, { maxAge: 0 }));
+
+app.get('/api/setup/status', (_request, response) => {
+  response.json(publicSetupStatus(runtime));
+});
+
+app.post('/api/setup/save', requireSetupAccess, async (request, response, next) => {
+  try {
+    runtime = await saveRuntimeConfig(runtimePaths, runtime, request.body || {});
+    await reloadGalleryStore();
+    response.json(publicSetupStatus(runtime));
+  } catch (error) {
+    next(error);
+  }
+});
 
 app.get('/api/photos', async (_request, response, next) => {
   try {
@@ -230,10 +256,38 @@ app.use((error, _request, response, _next) => {
 
 app.listen(port, () => {
   console.log(`Nian gallery is running at http://localhost:${port}`);
+  console.log(`First-run setup: http://localhost:${port}/setup`);
   console.log(`Hidden upload room: http://localhost:${port}/studio`);
 });
 
 async function cleanupTempFiles(files) {
   if (!Array.isArray(files)) return;
   await Promise.all(files.map((file) => unlink(file.path).catch(() => {})));
+}
+
+async function reloadGalleryStore() {
+  await galleryStore.close?.();
+  galleryStore = createGalleryStore({
+    dataDir,
+    manifestPath,
+    mediaDir,
+    originalDir,
+    uploadDir,
+    runtimeConfig: runtime.config,
+  });
+  await galleryStore.init();
+}
+
+function publicMediaDir() {
+  return runtime.config.storage?.kind === 'local' && runtime.config.storage.mediaDir
+    ? runtime.config.storage.mediaDir
+    : mediaDir;
+}
+
+function requireSetupAccess(request, response, next) {
+  if (!runtime.config.setupComplete || isAdminRequest(request)) {
+    next();
+    return;
+  }
+  response.status(401).json({ ok: false, message: 'Admin login required before changing setup.' });
 }

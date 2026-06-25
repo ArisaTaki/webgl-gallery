@@ -4,21 +4,25 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { makeR2Key } from './galleryUtils.js';
 
-export function createStorage({ mediaDir, originalDir }) {
-  if (hasR2Config()) {
-    return new R2Storage();
+export function createStorage({ mediaDir, originalDir, storageConfig = null }) {
+  if (hasR2Config(storageConfig)) {
+    return new R2Storage(storageConfig);
   }
-  return new LocalStorage({ mediaDir, originalDir });
+  return new LocalStorage({
+    mediaDir: storageConfig?.mediaDir || mediaDir,
+    originalDir: storageConfig?.originalDir || originalDir,
+  });
 }
 
-export function hasR2Config() {
+export function hasR2Config(storageConfig: any = null) {
+  const r2 = storageConfig?.r2 || {};
   return Boolean(
-    process.env.R2_ACCOUNT_ID &&
-      process.env.R2_ACCESS_KEY_ID &&
-      process.env.R2_SECRET_ACCESS_KEY &&
-      process.env.R2_PUBLIC_BUCKET &&
-      process.env.R2_PRIVATE_BUCKET &&
-      process.env.R2_PUBLIC_BASE_URL,
+    (r2.accountId || process.env.R2_ACCOUNT_ID) &&
+      (r2.accessKeyId || process.env.R2_ACCESS_KEY_ID) &&
+      (r2.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY) &&
+      (r2.publicBucket || process.env.R2_PUBLIC_BUCKET) &&
+      (r2.privateBucket || process.env.R2_PRIVATE_BUCKET) &&
+      (r2.publicBaseUrl || process.env.R2_PUBLIC_BASE_URL),
   );
 }
 
@@ -59,17 +63,18 @@ export class LocalStorage {
 export class R2Storage {
   [key: string]: any;
 
-  constructor() {
+  constructor(storageConfig: any = null) {
+    const r2 = storageConfig?.r2 || {};
     this.kind = 'r2';
-    this.publicBucket = process.env.R2_PUBLIC_BUCKET;
-    this.privateBucket = process.env.R2_PRIVATE_BUCKET;
-    this.publicBaseUrl = String(process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+    this.publicBucket = r2.publicBucket || process.env.R2_PUBLIC_BUCKET;
+    this.privateBucket = r2.privateBucket || process.env.R2_PRIVATE_BUCKET;
+    this.publicBaseUrl = String(r2.publicBaseUrl || process.env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
     this.client = new S3Client({
       credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        accessKeyId: r2.accessKeyId || process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: r2.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY,
       },
-      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      endpoint: `https://${r2.accountId || process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       region: 'auto',
     });
   }

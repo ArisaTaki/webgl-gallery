@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { and, asc, eq, ne } from 'drizzle-orm';
 import { createDatabase } from './db/client.js';
 import { galleryGroups, photoAssets, photos as photoRows } from './db/schema.js';
@@ -21,11 +22,20 @@ import {
   toIsoOrNull,
 } from './galleryUtils.js';
 
-export function createGalleryStore({ dataDir, manifestPath, mediaDir, originalDir, uploadDir }) {
-  const database = createDatabase();
-  const storage = createStorage({ mediaDir, originalDir });
-  if (database) {
+export function createGalleryStore({ dataDir, manifestPath, mediaDir, originalDir, uploadDir, runtimeConfig = null }) {
+  const databaseConfig = runtimeConfig?.database || {};
+  const storageConfig = runtimeConfig?.storage || {};
+  const storage = createStorage({ mediaDir, originalDir, storageConfig });
+  if (databaseConfig.kind === 'postgres' || process.env.DATABASE_URL) {
+    const database = createDatabase(databaseConfig.databaseUrl || process.env.DATABASE_URL);
     return new PostgresGalleryStore({ database, storage });
+  }
+  if (databaseConfig.kind === 'sqlite' || process.env.GALLERY_SQLITE_PATH) {
+    return new SqliteGalleryStore({
+      sqlitePath: databaseConfig.sqlitePath || process.env.GALLERY_SQLITE_PATH,
+      manifestPath,
+      storage,
+    });
   }
   return new ManifestGalleryStore({ dataDir, manifestPath, mediaDir, originalDir, storage, uploadDir });
 }
@@ -259,6 +269,411 @@ class ManifestGalleryStore {
   }
 }
 
+class SqliteGalleryStore {
+  [key: string]: any;
+
+  constructor({ sqlitePath, manifestPath, storage }) {
+    this.sqlitePath = sqlitePath;
+    this.manifestPath = manifestPath;
+    this.storage = storage;
+    this.sqlite = null;
+  }
+
+  async init() {
+    await mkdir(path.dirname(this.sqlitePath), { recursive: true });
+    this.sqlite = new DatabaseSync(this.sqlitePath);
+    this.sqlite.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE IF NOT EXISTS groups (
+        id TEXT PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        coverPhotoId TEXT,
+        sortOrder INTEGER NOT NULL DEFAULT 0,
+        visibility TEXT NOT NULL DEFAULT 'public',
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS groups_visibility_idx ON groups(visibility);
+      CREATE INDEX IF NOT EXISTS groups_sort_idx ON groups(sortOrder);
+      CREATE TABLE IF NOT EXISTS photos (
+        id TEXT PRIMARY KEY,
+        groupId TEXT NOT NULL REFERENCES groups(id),
+        slug TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        capturedAt TEXT,
+        sourceName TEXT NOT NULL DEFAULT '',
+        width INTEGER NOT NULL DEFAULT 1,
+        height INTEGER NOT NULL DEFAULT 1,
+        aspect REAL NOT NULL DEFAULT 1,
+        color TEXT NOT NULL DEFAULT 'rgb(188, 148, 57)',
+        blurDataUrl TEXT NOT NULL DEFAULT '',
+        sortOrder INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'active',
+        visitUrl TEXT NOT NULL DEFAULT '',
+        workMedia TEXT NOT NULL DEFAULT '[]',
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS photos_group_idx ON photos(groupId);
+      CREATE INDEX IF NOT EXISTS photos_status_idx ON photos(status);
+      CREATE INDEX IF NOT EXISTS photos_sort_idx ON photos(sortOrder);
+      CREATE TABLE IF NOT EXISTS photo_assets (
+        id TEXT PRIMARY KEY,
+        photoId TEXT NOT NULL REFERENCES photos(id),
+        kind TEXT NOT NULL,
+        r2Key TEXT NOT NULL,
+        url TEXT NOT NULL DEFAULT '',
+        width INTEGER NOT NULL DEFAULT 1,
+        height INTEGER NOT NULL DEFAULT 1,
+        sizeBytes INTEGER NOT NULL DEFAULT 0,
+        mimeType TEXT NOT NULL DEFAULT 'application/octet-stream',
+        createdAt TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS photo_assets_photo_idx ON photo_assets(photoId);
+      CREATE INDEX IF NOT EXISTS photo_assets_kind_idx ON photo_assets(kind);
+    `);
+    this.ensureDefaultGroup();
+    await this.seedFromManifestIfEmpty();
+  }
+
+  async close() {
+    this.sqlite?.close();
+  }
+
+  async listPublicGallery({ groupSlug }: any = {}) {
+    return buildGalleryPayload(await this.readState(), { publicOnly: true, groupSlug });
+  }
+
+  async listAdminGallery() {
+    return buildGalleryPayload(await this.readState(), { publicOnly: false });
+  }
+
+  async createGroup(input) {
+    const state = await this.readState();
+    const group = defaultGroup({
+      id: `group-${crypto.randomUUID()}`,
+      slug: makeUniqueSlug(input.slug || input.title || 'group', state.groups.map((item) => item.slug)),
+      title: String(input.title || 'Untitled Group'),
+      description: String(input.description || ''),
+      sortOrder: toInt(input.sortOrder, state.groups.length),
+      visibility: normalizeVisibility(input.visibility),
+    });
+    this.insertGroup(group);
+    return group;
+  }
+
+  async updateGroup(id, patch) {
+    const state = await this.readState();
+    const group = state.groups.find((item) => item.id === id || item.slug === id);
+    if (!group) throw httpError(404, 'Group not found.');
+    const update: any = {
+      updatedAt: nowIso(),
+    };
+    if (patch.title !== undefined) update.title = String(patch.title || 'Untitled Group');
+    if (patch.description !== undefined) update.description = String(patch.description || '');
+    if (patch.coverPhotoId !== undefined) update.coverPhotoId = patch.coverPhotoId || null;
+    if (patch.sortOrder !== undefined) update.sortOrder = toInt(patch.sortOrder, group.sortOrder);
+    if (patch.visibility !== undefined) update.visibility = normalizeVisibility(patch.visibility);
+    if (patch.slug !== undefined) {
+      update.slug = makeUniqueSlug(
+        patch.slug || patch.title || group.title,
+        state.groups.filter((item) => item.id !== group.id).map((item) => item.slug),
+      );
+    }
+    this.updateRow('groups', update, group.id);
+    return this.getGroup(group.id);
+  }
+
+  async deleteGroup(id) {
+    const state = await this.readState();
+    const group = state.groups.find((item) => item.id === id || item.slug === id);
+    if (!group) throw httpError(404, 'Group not found.');
+    if (group.id === DEFAULT_GROUP_ID) throw httpError(400, 'The default group cannot be deleted.');
+    const activeCount = this.sqlite
+      .prepare('SELECT COUNT(*) AS count FROM photos WHERE groupId = ? AND status != ?')
+      .get(group.id, 'deleted')?.count || 0;
+    if (activeCount) throw httpError(409, 'Move or delete photos before deleting this group.');
+    this.sqlite.prepare('UPDATE photos SET groupId = ?, updatedAt = ? WHERE groupId = ?').run(DEFAULT_GROUP_ID, nowIso(), group.id);
+    this.sqlite.prepare('DELETE FROM groups WHERE id = ?').run(group.id);
+    return { ok: true };
+  }
+
+  async addPhotos({ files, groupId = DEFAULT_GROUP_ID, title = '', titlePrefix = 'Gallery', description = '', capturedAt = null }: any) {
+    const state = await this.readState();
+    const group = resolveGroup(state.groups, groupId);
+    const existingSlugs = state.photos.map((photo) => photo.slug);
+    for (const [index, file] of files.entries()) {
+      const stem = path.basename(file.originalname, path.extname(file.originalname));
+      const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
+      const photoTitle = title && files.length === 1
+        ? String(title)
+        : `${titlePrefix} ${String(state.photos.length + index + 1).padStart(3, '0')}`;
+      const processed = await buildPhotoDerivatives({
+        inputPath: file.path,
+        id: photoId,
+        sourceName: file.originalname,
+        title: photoTitle,
+      });
+      const storedAssets = await this.storeAssets({ group, photoId, processed });
+      const photo = {
+        ...processed.photo,
+        id: photoId,
+        groupId: group.id,
+        slug: makeUniqueSlug(photoTitle || stem || photoId, existingSlugs),
+        title: photoTitle,
+        description: String(description || ''),
+        capturedAt: toIsoOrNull(capturedAt),
+        sortOrder: nextSortOrder(state.photos),
+        status: 'active',
+        visitUrl: '',
+        workMedia: [],
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      this.transaction(() => {
+        this.insertPhoto(photo);
+        this.insertAssets(storedAssets);
+        if (!group.coverPhotoId) {
+          this.sqlite.prepare('UPDATE groups SET coverPhotoId = ?, updatedAt = ? WHERE id = ?').run(photoId, nowIso(), group.id);
+          group.coverPhotoId = photoId;
+        }
+      });
+      state.photos.push(photo);
+      existingSlugs.push(photo.slug);
+      await rm(file.path, { force: true }).catch(() => {});
+    }
+    return this.listAdminGallery();
+  }
+
+  async updatePhoto(id, patch) {
+    const state = await this.readState();
+    const photo = state.photos.find((item) => item.id === id || item.slug === id);
+    if (!photo) throw httpError(404, 'Photo not found.');
+    const update: any = {
+      updatedAt: nowIso(),
+    };
+    if (patch.groupId !== undefined) update.groupId = resolveGroup(state.groups, patch.groupId).id;
+    if (patch.title !== undefined) update.title = String(patch.title || 'Untitled Photo');
+    if (patch.description !== undefined) update.description = String(patch.description || '');
+    if (patch.capturedAt !== undefined) update.capturedAt = toIsoOrNull(patch.capturedAt);
+    if (patch.sortOrder !== undefined) update.sortOrder = toInt(patch.sortOrder, photo.sortOrder);
+    if (patch.status !== undefined) update.status = normalizePhotoStatus(patch.status);
+    if (patch.visitUrl !== undefined) update.visitUrl = String(patch.visitUrl || '');
+    if (patch.slug !== undefined) {
+      update.slug = makeUniqueSlug(
+        patch.slug || patch.title || photo.title,
+        state.photos.filter((item) => item.id !== photo.id).map((item) => item.slug),
+      );
+    }
+    this.updateRow('photos', update, photo.id);
+    return this.getPhoto(photo.id);
+  }
+
+  async deletePhoto(id) {
+    const state = await this.readState();
+    const photo = state.photos.find((item) => item.id === id || item.slug === id);
+    if (!photo) throw httpError(404, 'Photo not found.');
+    this.sqlite.prepare('UPDATE photos SET status = ?, updatedAt = ? WHERE id = ?').run('deleted', nowIso(), photo.id);
+    for (const asset of photo.assets || []) {
+      this.storage.deleteAsset(asset).catch(() => {});
+    }
+    return { ok: true };
+  }
+
+  async reprocessPhoto(id) {
+    const state = await this.readState();
+    const photo = state.photos.find((item) => item.id === id || item.slug === id);
+    if (!photo) throw httpError(404, 'Photo not found.');
+    const group = resolveGroup(state.groups, photo.groupId);
+    const original = (photo.assets || []).find((asset) => asset.kind === 'original');
+    if (!original) throw httpError(409, 'Original asset is not available for this photo.');
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'gallery-reprocess-'));
+    const inputPath = path.join(tempDir, photo.sourceName || `${photo.id}.image`);
+    try {
+      await writeFile(inputPath, await this.storage.getAssetBuffer(original));
+      const processed = await buildPhotoDerivatives({
+        inputPath,
+        id: photo.id,
+        sourceName: photo.sourceName,
+        title: photo.title,
+      });
+      const storedAssets = [original];
+      for (const asset of processed.assets.filter((item) => item.kind !== 'original')) {
+        const stored = await this.storage.putAsset({
+          groupSlug: group.slug,
+          photoId: photo.id,
+          kind: asset.kind,
+          fileName: asset.fileName,
+          buffer: asset.buffer,
+          mimeType: asset.mimeType,
+        });
+        storedAssets.push(toAssetRecord({ asset, stored, photoId: photo.id }));
+      }
+      this.transaction(() => {
+        this.sqlite.prepare('DELETE FROM photo_assets WHERE photoId = ? AND kind != ?').run(photo.id, 'original');
+        this.insertAssets(storedAssets.filter((asset) => asset.kind !== 'original'));
+        this.updateRow('photos', {
+          width: processed.photo.width,
+          height: processed.photo.height,
+          aspect: processed.photo.aspect,
+          color: processed.photo.color,
+          blurDataUrl: processed.photo.blurDataUrl,
+          updatedAt: nowIso(),
+        }, photo.id);
+      });
+      return { ...photo, ...processed.photo, assets: storedAssets, ...publicAssetFields(storedAssets) };
+    } finally {
+      await rm(tempDir, { force: true, recursive: true }).catch(() => {});
+    }
+  }
+
+  async storeAssets({ group, photoId, processed }) {
+    const records = [];
+    for (const asset of processed.assets) {
+      const stored = await this.storage.putAsset({
+        groupSlug: group.slug,
+        photoId,
+        kind: asset.kind,
+        fileName: asset.fileName,
+        buffer: asset.buffer,
+        mimeType: asset.mimeType,
+      });
+      records.push(toAssetRecord({ asset, stored, photoId }));
+    }
+    return records;
+  }
+
+  async readState() {
+    const groups = this.sqlite.prepare('SELECT * FROM groups ORDER BY sortOrder ASC, createdAt ASC').all().map(dbGroupToRecord);
+    const photos = this.sqlite.prepare('SELECT * FROM photos ORDER BY sortOrder ASC, createdAt ASC').all().map(dbPhotoToRecord);
+    const assetsByPhoto = groupAssets(this.sqlite.prepare('SELECT * FROM photo_assets').all().map(dbAssetToRecord));
+    for (const photo of photos) {
+      photo.assets = assetsByPhoto.get(photo.id) || [];
+      Object.assign(photo, publicAssetFields(photo.assets));
+    }
+    return {
+      groups: groups.length ? groups : [defaultGroup()],
+      photos,
+    };
+  }
+
+  async seedFromManifestIfEmpty() {
+    const existingPhotos = this.sqlite.prepare('SELECT COUNT(*) AS count FROM photos').get()?.count || 0;
+    if (existingPhotos) return;
+    const manifest = await loadManifest(this.manifestPath);
+    const groups = normalizeManifestGroups(manifest.groups);
+    const photos = (manifest.photos || []).map((photo, index) => normalizeManifestPhoto(photo, index));
+    if (!photos.length) return;
+    this.transaction(() => {
+      for (const group of groups) this.insertGroup(group, { ignore: true });
+      for (const photo of photos) {
+        this.insertPhoto(photo, { ignore: true });
+        this.insertAssets(photo.assets || [], { ignore: true });
+      }
+    });
+  }
+
+  ensureDefaultGroup() {
+    this.insertGroup(defaultGroup(), { ignore: true });
+  }
+
+  getGroup(id) {
+    const row = this.sqlite.prepare('SELECT * FROM groups WHERE id = ?').get(id);
+    return row ? dbGroupToRecord(row) : null;
+  }
+
+  getPhoto(id) {
+    const row = this.sqlite.prepare('SELECT * FROM photos WHERE id = ?').get(id);
+    return row ? dbPhotoToRecord(row) : null;
+  }
+
+  insertGroup(group, options: any = {}) {
+    this.sqlite.prepare(`${options.ignore ? 'INSERT OR IGNORE' : 'INSERT'} INTO groups
+      (id, slug, title, description, coverPhotoId, sortOrder, visibility, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        group.id,
+        group.slug,
+        group.title,
+        group.description || '',
+        group.coverPhotoId || null,
+        toInt(group.sortOrder, 0),
+        normalizeVisibility(group.visibility),
+        group.createdAt || nowIso(),
+        group.updatedAt || nowIso(),
+      );
+  }
+
+  insertPhoto(photo, options: any = {}) {
+    this.sqlite.prepare(`${options.ignore ? 'INSERT OR IGNORE' : 'INSERT'} INTO photos
+      (id, groupId, slug, title, description, capturedAt, sourceName, width, height, aspect, color, blurDataUrl, sortOrder, status, visitUrl, workMedia, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(
+        photo.id,
+        photo.groupId,
+        photo.slug,
+        photo.title,
+        photo.description || '',
+        toIsoOrNull(photo.capturedAt),
+        photo.sourceName || '',
+        photo.width || 1,
+        photo.height || 1,
+        photo.aspect || 1,
+        photo.color || 'rgb(188, 148, 57)',
+        photo.blurDataUrl || '',
+        toInt(photo.sortOrder, 0),
+        normalizePhotoStatus(photo.status),
+        photo.visitUrl || '',
+        JSON.stringify(Array.isArray(photo.workMedia) ? photo.workMedia : []),
+        photo.createdAt || nowIso(),
+        photo.updatedAt || nowIso(),
+      );
+  }
+
+  insertAssets(assets, options: any = {}) {
+    const statement = this.sqlite.prepare(`${options.ignore ? 'INSERT OR IGNORE' : 'INSERT'} INTO photo_assets
+      (id, photoId, kind, r2Key, url, width, height, sizeBytes, mimeType, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    for (const asset of assets) {
+      statement.run(
+        asset.id,
+        asset.photoId,
+        asset.kind,
+        asset.r2Key,
+        asset.url || '',
+        asset.width || 1,
+        asset.height || 1,
+        asset.sizeBytes || 0,
+        asset.mimeType || 'application/octet-stream',
+        asset.createdAt || nowIso(),
+      );
+    }
+  }
+
+  updateRow(table, patch, id) {
+    const entries = Object.entries(patch);
+    if (!entries.length) return;
+    const assignments = entries.map(([key]) => `${key} = ?`).join(', ');
+    const values = entries.map(([, value]) => value);
+    this.sqlite.prepare(`UPDATE ${table} SET ${assignments} WHERE id = ?`).run(...values, id);
+  }
+
+  transaction(callback) {
+    this.sqlite.exec('BEGIN IMMEDIATE');
+    try {
+      const result = callback();
+      this.sqlite.exec('COMMIT');
+      return result;
+    } catch (error) {
+      this.sqlite.exec('ROLLBACK');
+      throw error;
+    }
+  }
+}
+
 class PostgresGalleryStore {
   [key: string]: any;
 
@@ -329,6 +744,7 @@ class PostgresGalleryStore {
       .from(photoRows)
       .where(and(eq(photoRows.groupId, group.id), ne(photoRows.status, 'deleted')));
     if (activePhotos.length) throw httpError(409, 'Move or delete photos before deleting this group.');
+    await this.db.update(photoRows).set({ groupId: DEFAULT_GROUP_ID, updatedAt: new Date() }).where(eq(photoRows.groupId, group.id));
     await this.db.delete(galleryGroups).where(eq(galleryGroups.id, group.id));
     return { ok: true };
   }

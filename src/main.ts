@@ -61,6 +61,7 @@ const VIEW = {
   detail: 'detail',
   index: 'index',
   loading: 'loading',
+  setup: 'setup',
   studio: 'studio',
   work: 'work',
 };
@@ -114,6 +115,9 @@ const state = {
   photos: [],
   ready: false,
   rotateLatency: 0,
+  setupMessage: '',
+  setupSaving: false,
+  setupStatus: null,
   scroll: 0,
   scrollLagPx: 0,
   scrollLatencyPx: Number.NaN,
@@ -269,8 +273,17 @@ const morphHoverState = new WeakMap();
 init();
 
 async function init() {
+  state.setupStatus = await loadSetupStatus();
+  if (state.setupStatus && !state.setupStatus.configured && !isSetupPath()) {
+    history.replaceState({}, '', '/setup');
+    state.mode = VIEW.setup;
+  }
   state.photos = await loadPhotos();
   applyRouteState({ initial: true, updateMode: false });
+  if (state.setupStatus && !state.setupStatus.configured && !isSetupPath()) {
+    history.replaceState({}, '', '/setup');
+    state.mode = VIEW.setup;
+  }
   renderShell();
   const texturesReady = setupScene();
   attachEvents();
@@ -290,6 +303,18 @@ async function init() {
   });
 
   requestAnimationFrame(tick);
+}
+
+async function loadSetupStatus() {
+  return fetch('/api/setup/status', { cache: 'no-store' })
+    .then((response) => (response.ok ? response.json() : Promise.reject()))
+    .catch(() => ({
+      configured: true,
+      database: { kind: 'sqlite', configured: true },
+      storage: { kind: 'local', configured: true },
+      auth: { hasAdminPassword: false, hasSessionSecret: false },
+      checks: [],
+    }));
 }
 
 async function loadPhotos() {
@@ -640,6 +665,8 @@ function renderShell() {
         <p class="about-rights">PRIVATE FAMILY ARCHIVE<br />NIAN NIAN 2026</p>
       </section>
 
+      ${setupPanelHtml()}
+
       <section class="studio-panel" aria-label="Gallery studio" aria-hidden="${state.mode !== VIEW.studio}">
         <div class="studio-shell">
           <form class="studio-form studio-login-form">
@@ -664,6 +691,7 @@ function renderShell() {
                 <h2>Archive</h2>
               </div>
               <div class="studio-admin-actions">
+                <button type="button" data-action="setup-link">Setup</button>
                 <button type="button" data-action="admin-refresh">Refresh</button>
                 <button type="button" data-action="admin-logout">Logout</button>
                 <button type="button" data-action="close-studio">Close</button>
@@ -697,6 +725,11 @@ function renderShell() {
     shadowTotal: app.querySelector('[data-shadow-total]'),
     shadowTotalPrev: app.querySelector('[data-shadow-total-prev]'),
     shell: app.querySelector('.gallery-shell'),
+    setupDatabaseKind: app.querySelector('select[name="databaseKind"]'),
+    setupForm: app.querySelector('.setup-form'),
+    setupMessage: app.querySelector('[data-setup-message]'),
+    setupPanel: app.querySelector('.setup-panel'),
+    setupStorageKind: app.querySelector('select[name="storageKind"]'),
     studioAdmin: app.querySelector('[data-studio-admin]'),
     studioAdminBody: app.querySelector('[data-studio-admin-body]'),
     studioFileCount: app.querySelector('[data-studio-file-count]'),
@@ -720,6 +753,123 @@ function renderShell() {
     galleryEls.title.textContent = 'NO PHOTOS';
     galleryEls.status.textContent = 'No photos synced yet.';
   }
+  updateSetupVisibility();
+}
+
+function setupPanelHtml() {
+  const status = state.setupStatus || {};
+  const database = status.database || {};
+  const storage = status.storage || {};
+  const dbKind = database.kind || 'sqlite';
+  const storageKind = storage.kind || 'local';
+  const checks = (status.checks || [])
+    .map((check) => `
+      <span class="setup-check ${check.ok ? 'is-ok' : 'is-warn'}">
+        <i>${check.ok ? 'OK' : 'SET'}</i>${escapeHtml(check.label)}
+      </span>
+    `)
+    .join('');
+  return `
+    <section class="setup-panel" aria-label="Gallery setup" aria-hidden="${state.mode !== VIEW.setup}">
+      <form class="setup-form">
+        <header class="setup-head">
+          <div>
+            <p class="kicker">First Run</p>
+            <h2>Setup</h2>
+          </div>
+          <div class="setup-checks">
+            ${checks || '<span class="setup-check is-warn"><i>SET</i>Local setup</span>'}
+          </div>
+        </header>
+
+        <section class="setup-section">
+          <h3>Metadata</h3>
+          <label>
+            <span>Database</span>
+            <select name="databaseKind">
+              <option value="sqlite" ${dbKind === 'sqlite' ? 'selected' : ''}>Local SQLite</option>
+              <option value="postgres" ${dbKind === 'postgres' ? 'selected' : ''}>Postgres</option>
+            </select>
+          </label>
+          <label data-setup-db="sqlite">
+            <span>SQLite file</span>
+            <input name="sqlitePath" value="${escapeHtml(database.sqlitePath || '')}" placeholder=".gallery/gallery.sqlite" />
+          </label>
+          <label data-setup-db="postgres">
+            <span>Database URL</span>
+            <input name="databaseUrl" type="password" autocomplete="off" placeholder="${database.hasDatabaseUrl ? 'Configured. Leave blank to keep.' : 'postgres://...'}" />
+          </label>
+        </section>
+
+        <section class="setup-section">
+          <h3>Images</h3>
+          <label>
+            <span>Storage</span>
+            <select name="storageKind">
+              <option value="local" ${storageKind === 'local' ? 'selected' : ''}>Local folder</option>
+              <option value="r2" ${storageKind === 'r2' ? 'selected' : ''}>Cloudflare R2</option>
+            </select>
+          </label>
+          <div class="setup-grid" data-setup-storage="local">
+            <label>
+              <span>Public media dir</span>
+              <input name="mediaDir" value="${escapeHtml(storage.mediaDir || '')}" placeholder="public/media" />
+            </label>
+            <label>
+              <span>Originals dir</span>
+              <input name="originalDir" value="${escapeHtml(storage.originalDir || '')}" placeholder=".gallery/originals" />
+            </label>
+          </div>
+          <div class="setup-grid" data-setup-storage="r2">
+            <label>
+              <span>Account ID</span>
+              <input name="r2AccountId" autocomplete="off" />
+            </label>
+            <label>
+              <span>Access key ID</span>
+              <input name="r2AccessKeyId" autocomplete="off" placeholder="${storage.hasR2Credentials ? 'Configured. Leave blank to keep.' : ''}" />
+            </label>
+            <label>
+              <span>Secret access key</span>
+              <input name="r2SecretAccessKey" type="password" autocomplete="off" placeholder="${storage.hasR2Credentials ? 'Configured. Leave blank to keep.' : ''}" />
+            </label>
+            <label>
+              <span>Public bucket</span>
+              <input name="r2PublicBucket" autocomplete="off" />
+            </label>
+            <label>
+              <span>Private bucket</span>
+              <input name="r2PrivateBucket" autocomplete="off" />
+            </label>
+            <label>
+              <span>Public base URL</span>
+              <input name="r2PublicBaseUrl" value="${escapeHtml(storage.publicBaseUrl || '')}" placeholder="https://cdn.example.com" />
+            </label>
+          </div>
+        </section>
+
+        <section class="setup-section">
+          <h3>Admin</h3>
+          <div class="setup-grid">
+            <label>
+              <span>Password</span>
+              <input name="adminPassword" type="password" autocomplete="new-password" placeholder="${status.auth?.hasAdminPassword ? 'Configured. Leave blank to keep.' : 'Set admin password'}" />
+            </label>
+            <label>
+              <span>Session secret</span>
+              <input name="sessionSecret" type="password" autocomplete="off" placeholder="${status.auth?.hasSessionSecret ? 'Configured. Leave blank to keep.' : 'Auto-generated if blank'}" />
+            </label>
+          </div>
+        </section>
+
+        <footer class="setup-actions">
+          <p data-setup-message>${escapeHtml(state.setupMessage || (status.configured ? 'Configured.' : 'Choose local mode to start immediately.'))}</p>
+          <button type="button" data-action="setup-refresh">Refresh</button>
+          <button type="submit">Save setup</button>
+        </footer>
+      </form>
+    </section>
+  `;
 }
 
 function setupScene() {
@@ -963,6 +1113,12 @@ function attachEvents() {
     if (name === 'close-about') {
       closeAbout();
     }
+    if (name === 'setup-refresh') {
+      refreshSetupStatus();
+    }
+    if (name === 'setup-link') {
+      setMode(VIEW.setup);
+    }
     if (name === 'studio-link') {
       setMode(VIEW.studio);
       ensureAdminLoaded();
@@ -985,6 +1141,9 @@ function attachEvents() {
   app.addEventListener('mouseout', onMorphLeave);
 
   app.addEventListener('submit', (event: any) => {
+    if (event.target.matches('.setup-form')) {
+      onSetupSave(event);
+    }
     if (event.target.matches('.studio-login-form')) {
       onStudioLogin(event);
     }
@@ -1000,6 +1159,9 @@ function attachEvents() {
   });
 
   app.addEventListener('change', (event: any) => {
+    if (event.target.matches('.setup-form select')) {
+      updateSetupVisibility();
+    }
     if (event.target.matches('input[name="photos"]')) {
       updateStudioFileCount(event.target.form);
     }
@@ -1117,7 +1279,7 @@ function resize() {
 }
 
 function onWheel(event) {
-  if (state.mode === VIEW.studio || state.mode === VIEW.about) return;
+  if (state.mode === VIEW.setup || state.mode === VIEW.studio || state.mode === VIEW.about) return;
   event.preventDefault();
 
   if (state.mode === VIEW.work) {
@@ -1137,7 +1299,7 @@ function onWheel(event) {
 }
 
 function onPointerDown(event) {
-  if (state.mode === VIEW.studio || state.mode === VIEW.about) return;
+  if (state.mode === VIEW.setup || state.mode === VIEW.studio || state.mode === VIEW.about) return;
   syncPointer(event);
   state.dragging = true;
   state.dragMoved = 0;
@@ -1342,9 +1504,68 @@ function onKeyDown(event) {
     return;
   }
 
-  if (state.mode === VIEW.studio && key === 'Escape') {
+  if ((state.mode === VIEW.setup || state.mode === VIEW.studio) && key === 'Escape') {
     setMode(VIEW.index);
   }
+}
+
+async function refreshSetupStatus() {
+  state.setupMessage = 'Checking setup...';
+  updateSetupMessage();
+  state.setupStatus = await loadSetupStatus();
+  state.setupMessage = state.setupStatus.configured ? 'Configured.' : 'Choose local mode to start immediately.';
+  renderShell();
+  updateUi();
+}
+
+async function onSetupSave(event: any) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  state.setupSaving = true;
+  state.setupMessage = 'Saving setup...';
+  updateSetupMessage();
+  form.querySelectorAll('input, select, button').forEach((control) => {
+    control.disabled = true;
+  });
+  try {
+    const response = await fetch('/api/setup/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formJson(form)),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.message || 'Setup failed.');
+    state.setupStatus = result;
+    state.setupMessage = 'Setup saved. Opening studio...';
+    await refreshPublicPhotos();
+    setMode(VIEW.studio);
+    ensureAdminLoaded();
+  } catch (error: any) {
+    state.setupMessage = error.message || 'Setup failed.';
+    updateSetupMessage();
+  } finally {
+    state.setupSaving = false;
+    form.querySelectorAll('input, select, button').forEach((control) => {
+      control.disabled = false;
+    });
+  }
+}
+
+function updateSetupMessage() {
+  if (galleryEls.setupMessage) galleryEls.setupMessage.textContent = state.setupMessage || '';
+}
+
+function updateSetupVisibility() {
+  const form = galleryEls.setupForm;
+  if (!form) return;
+  const databaseKind = form.elements.databaseKind?.value || 'sqlite';
+  const storageKind = form.elements.storageKind?.value || 'local';
+  form.querySelectorAll('[data-setup-db]').forEach((item) => {
+    item.hidden = item.dataset.setupDb !== databaseKind;
+  });
+  form.querySelectorAll('[data-setup-storage]').forEach((item) => {
+    item.hidden = item.dataset.setupStorage !== storageKind;
+  });
 }
 
 async function ensureAdminLoaded() {
@@ -1737,7 +1958,7 @@ function resizePaginationCanvas() {
 }
 
 function updatePaginationHover() {
-  if (state.mode === VIEW.loading || state.mode === VIEW.studio) {
+  if (state.mode === VIEW.loading || state.mode === VIEW.setup || state.mode === VIEW.studio) {
     state.paginationHoverIndex = -1;
     galleryEls.shell?.classList.remove('is-pagination-hovering');
     return;
@@ -1805,14 +2026,14 @@ function drawPagination() {
   const waveCenter = isHomeSurface && getMaxScroll() > 0
     ? roundTo((state.scroll / getMaxScroll()) * metrics.photoCount, 2)
     : activeVisual;
-  const hoverTarget = state.paginationHoverIndex >= 0 && state.mode !== VIEW.about && state.mode !== VIEW.studio ? 1 : 0;
+  const hoverTarget = state.paginationHoverIndex >= 0 && state.mode !== VIEW.about && state.mode !== VIEW.setup && state.mode !== VIEW.studio ? 1 : 0;
   state.paginationOpen = damp(
     state.paginationOpen,
     isProjectSurface ? 1 : 0,
     isProjectSurface ? 0.1 : 0.08,
   );
   const shapeOpen = clamp(state.paginationOpen, 0, 1);
-  const alpha = state.mode === VIEW.about || state.mode === VIEW.studio ? 0 : 1;
+  const alpha = state.mode === VIEW.about || state.mode === VIEW.setup || state.mode === VIEW.studio ? 0 : 1;
   const ink = state.textRgb.map((value) => Math.round(value));
 
   ctx.clearRect(0, 0, width, height);
@@ -1964,7 +2185,7 @@ function layoutPlane(mesh, elapsed) {
   const intro = state.mode === VIEW.index ? state.homeIntro : 0;
   const homeHover = state.mode === VIEW.index && state.hoverIndex === index ? 1 : 0;
   const detailHover = state.mode === VIEW.detail && state.hoverIndex === index && index !== state.activeIndex ? 1 : 0;
-  const loadingAlpha = state.mode === VIEW.loading || state.mode === VIEW.studio || state.mode === VIEW.about ? 0 : 1;
+  const loadingAlpha = state.mode === VIEW.loading || state.mode === VIEW.setup || state.mode === VIEW.studio || state.mode === VIEW.about ? 0 : 1;
   const activePhoto = state.photos[state.activeIndex] || mesh.userData.photo;
   const activeMultiply = activePhoto?.multiply ?? 1;
   const activeInOverLight = activePhoto?.inOverLight ?? 0.7;
@@ -2337,6 +2558,11 @@ function updateUi() {
     galleryEls.studioPanel.setAttribute('aria-hidden', String(!isStudio));
     galleryEls.studioPanel.toggleAttribute('inert', !isStudio);
   }
+  if (galleryEls.setupPanel) {
+    const isSetup = state.mode === VIEW.setup;
+    galleryEls.setupPanel.setAttribute('aria-hidden', String(!isSetup));
+    galleryEls.setupPanel.toggleAttribute('inert', !isSetup);
+  }
   if (galleryEls.aboutPanel) {
     const isAbout = state.mode === VIEW.about;
     galleryEls.aboutPanel.setAttribute('aria-hidden', String(!isAbout));
@@ -2657,7 +2883,7 @@ function setMode(mode, options: LooseRecord = {}) {
   let preserveWorkFx = false;
   if (mode === VIEW.about && previousMode !== VIEW.about) {
     state.aboutReturnMode =
-      previousMode && previousMode !== VIEW.loading && previousMode !== VIEW.studio ? previousMode : VIEW.index;
+      previousMode && previousMode !== VIEW.loading && previousMode !== VIEW.setup && previousMode !== VIEW.studio ? previousMode : VIEW.index;
   }
   state.mode = mode;
   state.hoverIndex = -1;
@@ -2713,7 +2939,7 @@ function setMode(mode, options: LooseRecord = {}) {
     hideWorkThumbMotion();
   }
   galleryEls.shell?.setAttribute('data-mode', mode);
-  galleryEls.shell?.classList.remove('is-about', 'is-loading', 'is-index', 'is-detail', 'is-studio', 'is-work');
+  galleryEls.shell?.classList.remove('is-about', 'is-loading', 'is-index', 'is-detail', 'is-setup', 'is-studio', 'is-work');
   galleryEls.shell?.classList.add(`is-${mode}`);
   updateUi();
   if (shouldPrimeWorkMotion) {
@@ -2851,6 +3077,7 @@ function syncRouteForMode(mode, options: LooseRecord = {}) {
 
 function routePathForMode(mode) {
   if (mode === VIEW.about) return '/about';
+  if (mode === VIEW.setup) return '/setup';
   if (mode === VIEW.studio) return '/studio';
   if (mode === VIEW.detail || mode === VIEW.work) return photoPath(state.activeIndex);
   return '/';
@@ -2865,6 +3092,7 @@ function photoPath(index) {
 }
 
 function getPathRoute() {
+  if (isSetupPath()) return { mode: VIEW.setup };
   if (isStudioPath()) return { mode: VIEW.studio };
   if (isAboutPath()) return { mode: VIEW.about };
   const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
@@ -2883,15 +3111,21 @@ function getPathRoute() {
 }
 
 function getInitialMode() {
+  if (isSetupPath()) return VIEW.setup;
   if (isStudioPath()) return VIEW.studio;
   if (isAboutPath()) return VIEW.about;
   return VIEW.loading;
 }
 
 function getPathMode() {
+  if (isSetupPath()) return VIEW.setup;
   if (isStudioPath()) return VIEW.studio;
   if (isAboutPath()) return VIEW.about;
   return VIEW.index;
+}
+
+function isSetupPath() {
+  return window.location.pathname.replace(/\/$/, '') === '/setup';
 }
 
 function isStudioPath() {
