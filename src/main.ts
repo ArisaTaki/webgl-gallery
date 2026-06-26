@@ -49,6 +49,8 @@ const WORK_ENTRY_REVEAL_DELAY = 100;
 const WORK_SWITCH_LAYER_LERP = 0.077;
 const WORK_SWITCH_FRAME_LERP = 0.13;
 const WORK_SWITCH_REVEAL_DELAY = 220;
+const WORK_EXIT_LERP = 0.18;
+const WORK_EXIT_CLEANUP_MS = 420;
 const DETAIL_SWITCH_EARLY_SCROLL_EASE = 0.0495;
 const DETAIL_SWITCH_EARLY_PLANE_EASE = 0.0495;
 const DETAIL_EXIT_EARLY_PLANE_EASE = 0.058;
@@ -286,6 +288,7 @@ let titleModeTimer = 0;
 let transitionTimer = 0;
 let workMediaTimer = 0;
 let workEntryTimer = 0;
+let workExitTimer = 0;
 let workFxResetRaf = 0;
 let titleLayoutRaf = 0;
 let frameDelta = 1;
@@ -3081,6 +3084,8 @@ function setMode(mode, options: LooseRecord = {}) {
     }, 1500);
   }
   if (mode === VIEW.work && previousMode !== VIEW.work) {
+    window.clearTimeout(workExitTimer);
+    galleryEls.shell?.classList.remove('is-work-layer-exiting');
     state.settleIndexAfterWorkExit = false;
     const media = getWorkMediaIndices();
     if (previousMode !== VIEW.about || !media.includes(state.workIndex)) {
@@ -3781,12 +3786,17 @@ function hideWorkThumbMotion() {
 function hideWorkLayerMotion() {
   const travel = getWorkLayerTravel();
   const hiddenY = travel * (state.switchDirection || 1);
+  window.clearTimeout(workExitTimer);
   window.cancelAnimationFrame(workFxResetRaf);
-  galleryEls.shell?.classList.add('is-work-media-resetting');
+  workFxResetRaf = 0;
+  galleryEls.shell?.classList.remove('is-work-media-resetting');
+  galleryEls.shell?.classList.add('is-work-layer-exiting');
   state.workLayerMotion = galleryEls.workLayers?.map((layer, index) => {
     const motion = state.workLayerMotion[index] || {};
     const token = (motion.loadToken || 0) + 1;
-    layer.style.setProperty('--work-layer-y', `${hiddenY.toFixed(2)}px`);
+    const currentY = Number.isFinite(motion.y) ? motion.y : parseFloat(layer.style.getPropertyValue('--work-layer-y')) || 0;
+    const img = layer.querySelector('.work-layer-img') as HTMLImageElement | null;
+    if (img) img.dataset.loadToken = String((Number(img.dataset.loadToken) || 0) + 1);
     layer.style.setProperty('--work-layer-opacity', '0.0000');
     layer.style.setProperty('--work-layer-bg-opacity', '0.0000');
     return {
@@ -3800,15 +3810,14 @@ function hideWorkLayerMotion() {
       revealAt: Number.POSITIVE_INFINITY,
       targetOpacity: 0,
       targetY: hiddenY,
-      y: hiddenY,
+      lerp: WORK_EXIT_LERP,
+      y: currentY,
     };
   }) || [];
-  state.workMotionActive = false;
-  void galleryEls.workStage?.offsetHeight;
-  workFxResetRaf = window.requestAnimationFrame(() => {
-    galleryEls.shell?.classList.remove('is-work-media-resetting');
-    workFxResetRaf = 0;
-  });
+  state.workMotionActive = true;
+  workExitTimer = window.setTimeout(() => {
+    galleryEls.shell?.classList.remove('is-work-layer-exiting');
+  }, WORK_EXIT_CLEANUP_MS);
 }
 
 function primeWorkBgMotion(now = performance.now()) {

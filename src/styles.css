@@ -1653,6 +1653,14 @@ a {
   transition: none;
 }
 
+.gallery-shell.is-work-layer-exiting .work-layer-bg {
+  transition: opacity 220ms linear;
+}
+
+.gallery-shell.is-work-layer-exiting .work-layer-img {
+  transition-duration: 320ms;
+}
+
 .gallery-shell.is-work .work-stage {
   transform: translate(-50%, -50%);
 }
