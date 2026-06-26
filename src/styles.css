@@ -1600,17 +1600,10 @@ a {
   transform: translate(-50%, -50%);
 }
 
-.work-stage-bg,
 .work-layer {
   grid-area: 1 / 1;
   width: 100%;
   height: 100%;
-}
-
-.work-stage-bg {
-  background: rgb(var(--work-rgb));
-  opacity: var(--work-bg-opacity, 0);
-  will-change: opacity;
 }
 
 .work-layer {
@@ -1623,19 +1616,10 @@ a {
   will-change: transform;
 }
 
-.work-layer-bg,
 .work-layer-img {
   grid-area: 1 / 1;
   width: 100%;
   height: 100%;
-}
-
-.work-layer-bg {
-  display: block;
-  background: rgb(var(--work-rgb));
-  opacity: var(--work-layer-bg-opacity, 1);
-  transition: opacity 100ms linear 1000ms;
-  will-change: opacity;
 }
 
 .work-layer-img {
@@ -1648,13 +1632,8 @@ a {
   will-change: opacity;
 }
 
-.gallery-shell.is-work-media-resetting .work-layer-bg,
 .gallery-shell.is-work-media-resetting .work-layer-img {
   transition: none;
-}
-
-.gallery-shell.is-work-layer-exiting .work-layer-bg {
-  transition: opacity 220ms linear;
 }
 
 .gallery-shell.is-work-layer-exiting .work-layer-img {

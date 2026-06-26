@@ -245,10 +245,6 @@ const state = {
   workThumbMotion: [],
   workThumbMotionActive: false,
   workIndex: 0,
-  workBgFadeAt: 0,
-  workBgMotionActive: false,
-  workBgOpacity: 0,
-  workBgTargetOpacity: 0,
   workRgb: BASE_WORK_RGB.slice(),
   workRgbTarget: BASE_WORK_RGB.slice(),
   workMix: 0,
@@ -583,7 +579,6 @@ function renderShell() {
     .map(
       (photo, index) => `
         <div class="work-layer" data-work-index="${index}" aria-hidden="true">
-          <span class="work-layer-bg"></span>
           <img class="work-layer-img" src="${EMPTY_MEDIA_SRC}" data-work-src="${photo.large || photo.medium || photo.thumb || ''}" alt="" draggable="false" loading="lazy" />
         </div>
       `,
@@ -707,7 +702,6 @@ function renderShell() {
       </div>
 
       <section class="work-stage" aria-hidden="true">
-        <div class="work-stage-bg"></div>
         ${workLayers}
       </section>
 
@@ -852,7 +846,6 @@ function renderShell() {
     total: app.querySelector('[data-total]'),
     visitLink: app.querySelector('.visit-link'),
     workStage: app.querySelector('.work-stage'),
-    workStageBg: app.querySelector('.work-stage-bg'),
     workLayers: [...app.querySelectorAll('.work-layer')],
   };
   resetMotionState();
@@ -3113,7 +3106,6 @@ function setMode(mode, options: LooseRecord = {}) {
     window.clearTimeout(workMediaTimer);
     galleryEls.shell?.classList.remove('is-work-media-switching');
     hideWorkLayerMotion();
-    hideWorkBgMotion();
     hideWorkThumbMotion();
   }
   galleryEls.shell?.setAttribute('data-mode', mode);
@@ -3379,10 +3371,6 @@ function resetMotionState() {
   state.projectSwitchStartedAt = 0;
   state.workLayerMotion = [];
   state.workMotionActive = false;
-  state.workBgFadeAt = 0;
-  state.workBgMotionActive = false;
-  state.workBgOpacity = 0;
-  state.workBgTargetOpacity = 0;
   state.workThumbMotion = [];
   state.workThumbMotionActive = false;
   state.exitingWorkIndex = -1;
@@ -3409,7 +3397,6 @@ function resetPaginationMotion() {
 function updateDomMotion() {
   updateLoaderCounter();
   updateRailMotion();
-  updateWorkBgMotion();
   updateWorkLayerMotion();
   updateWorkThumbMotion();
   updatePaginationDigits();
@@ -3698,19 +3685,15 @@ function primeWorkLayerMotion(options: LooseRecord = {}) {
   const resetFx = state.mode === VIEW.work && !preserveImages;
   window.cancelAnimationFrame(workFxResetRaf);
   galleryEls.shell?.classList.toggle('is-work-media-resetting', resetFx);
-  primeWorkBgMotion(now);
   state.workLayerMotion = galleryEls.workLayers?.map((layer, index) => {
     const active = index === activeIndex;
     const wasVisible = preserveImages && Boolean(previousMotion[index]?.imageVisible);
     const y = travel;
     const opacity = wasVisible ? 1 : 0;
-    const bgOpacity = wasVisible ? 0 : 1;
     if (resetFx) resetWorkLayerImage(index);
     layer.style.setProperty('--work-layer-y', `${y.toFixed(2)}px`);
     layer.style.setProperty('--work-layer-opacity', opacity.toFixed(4));
-    layer.style.setProperty('--work-layer-bg-opacity', bgOpacity.toFixed(4));
     const motion = {
-      bgOpacity,
       entered: !active || wasVisible,
       imageVisible: wasVisible,
       loadStarted: wasVisible,
@@ -3808,10 +3791,8 @@ function hideWorkLayerMotion() {
     const img = layer.querySelector('.work-layer-img') as HTMLImageElement | null;
     if (img) img.dataset.loadToken = String((Number(img.dataset.loadToken) || 0) + 1);
     layer.style.setProperty('--work-layer-opacity', '0.0000');
-    layer.style.setProperty('--work-layer-bg-opacity', '0.0000');
     return {
       ...motion,
-      bgOpacity: 0,
       entered: false,
       imageVisible: false,
       loadStarted: false,
@@ -3830,24 +3811,8 @@ function hideWorkLayerMotion() {
   }, WORK_EXIT_CLEANUP_MS);
 }
 
-function primeWorkBgMotion(now = performance.now()) {
-  state.workBgFadeAt = now + 1100;
-  state.workBgOpacity = state.mode === VIEW.work ? 1 : 0;
-  state.workBgTargetOpacity = state.mode === VIEW.work ? 1 : 0;
-  state.workBgMotionActive = true;
-  galleryEls.workStage?.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
-  galleryEls.workStageBg?.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
-}
-
-function hideWorkBgMotion() {
-  state.workBgFadeAt = performance.now();
-  state.workBgTargetOpacity = 0;
-  state.workBgMotionActive = true;
-}
-
 function prepareWorkLayerSwitch(previousIndex, nextIndex, direction = Math.sign(nextIndex - previousIndex) || 1) {
   ensureWorkLayerMotion(previousIndex);
-  primeWorkBgMotion();
   const travel = getWorkLayerTravel();
   const exitY = -travel * direction;
   const enterY = travel * direction;
@@ -3867,9 +3832,7 @@ function prepareWorkLayerSwitch(previousIndex, nextIndex, direction = Math.sign(
     }
     if (index === nextIndex) {
       const wasVisible = Boolean(motion.imageVisible);
-      const bgOpacity = wasVisible ? 0 : 1;
       motion.y = enterY;
-      motion.bgOpacity = bgOpacity;
       motion.entered = wasVisible;
       motion.opacity = wasVisible ? 1 : 0;
       motion.revealAt = wasVisible ? now : Number.POSITIVE_INFINITY;
@@ -3877,7 +3840,6 @@ function prepareWorkLayerSwitch(previousIndex, nextIndex, direction = Math.sign(
       motion.targetY = 0;
       motion.lerp = WORK_SWITCH_LAYER_LERP;
       layer?.style.setProperty('--work-layer-opacity', motion.opacity.toFixed(4));
-      layer?.style.setProperty('--work-layer-bg-opacity', bgOpacity.toFixed(4));
       if (!wasVisible) requestWorkLayerImageLoad(index, motion, WORK_SWITCH_REVEAL_DELAY);
       return;
     }
@@ -3919,10 +3881,8 @@ function updateWorkLayerMotion() {
     if (state.mode === VIEW.work && !motion.entered && now >= motion.revealAt) {
       motion.entered = true;
       motion.imageVisible = true;
-      motion.bgOpacity = 0;
       motion.opacity = 1;
       motion.targetOpacity = 1;
-      layer?.style.setProperty('--work-layer-bg-opacity', '0.0000');
       layer?.style.setProperty('--work-layer-opacity', '1.0000');
     }
     const motionEase = motion.lerp || WORK_DOM_LERP;
@@ -3934,30 +3894,6 @@ function updateWorkLayerMotion() {
     layer.style.setProperty('--work-layer-y', `${motion.y.toFixed(2)}px`);
   });
   state.workMotionActive = moving;
-}
-
-function updateWorkBgMotion() {
-  if (!galleryEls.workStageBg) return;
-  const active = state.mode === VIEW.work || state.workBgMotionActive || state.workMix > 0.01;
-  if (!active) return;
-
-  if (state.mode === VIEW.work && performance.now() >= state.workBgFadeAt) {
-    state.workBgTargetOpacity = 0;
-  }
-  if (state.mode !== VIEW.work) {
-    state.workBgTargetOpacity = 0;
-  }
-
-  if (state.workBgTargetOpacity > state.workBgOpacity) {
-    state.workBgOpacity = state.workBgTargetOpacity;
-  } else {
-    state.workBgOpacity = damp(state.workBgOpacity, state.workBgTargetOpacity, 0.55);
-  }
-
-  const moving = Math.abs(state.workBgTargetOpacity - state.workBgOpacity) > 0.005;
-  galleryEls.workStage.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
-  galleryEls.workStageBg.style.setProperty('--work-bg-opacity', state.workBgOpacity.toFixed(4));
-  state.workBgMotionActive = moving;
 }
 
 function ensureWorkThumbMotion() {
