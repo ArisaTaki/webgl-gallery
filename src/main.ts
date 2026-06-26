@@ -672,7 +672,8 @@ function renderShell() {
         </div>
       `;
     }).join('');
-  const rails = state.photos
+  const railPhotos = getRailPhotos();
+  const rails = railPhotos
     .map(
       (photo, index) => `
         <button class="detail-thumb" type="button" data-index="${index}" style="--thumb-index:${index}" aria-label="${photo.title}">
@@ -1361,6 +1362,9 @@ function attachEvents() {
       const thumbIndex = Number(thumb.dataset.index);
       if (state.mode === VIEW.work) {
         if (getWorkMediaOrder(thumbIndex) >= 0) setWorkIndex(thumbIndex);
+      } else if (state.mode === VIEW.detail && state.albumPhotos.length) {
+        setWorkIndex(thumbIndex);
+        setMode(VIEW.work);
       } else {
         openIndexItem(thumbIndex);
       }
@@ -2815,9 +2819,9 @@ function updateUi() {
     const activeCenter = getPaginationActiveCenter();
     galleryEls.projectPagination.style.setProperty('--project-pagination-left', `${activeCenter}px`);
   }
-  const visibleWorkIndex = state.mode === VIEW.work ? state.workIndex : state.activeIndex;
+  const visibleThumbIndex = getRailIndex();
   galleryEls.workLayers?.forEach((layer, index) => {
-    layer.classList.toggle('is-active', index === visibleWorkIndex);
+    layer.classList.toggle('is-active', index === (state.mode === VIEW.work ? state.workIndex : state.activeIndex));
     layer.classList.toggle('is-exiting', index === state.exitingWorkIndex);
   });
   if (galleryEls.visitLink) {
@@ -2861,12 +2865,12 @@ function updateUi() {
       thumbImage.style.backgroundImage = `url("${thumbSrc.replace(/"/g, '%22')}")`;
       thumbImage.dataset.loaded = 'true';
     }
-    button.classList.toggle('is-active', index === visibleWorkIndex);
+    button.classList.toggle('is-active', index === visibleThumbIndex);
     button.classList.toggle('is-work-media', isWorkMedia);
     button.dataset.workOrder = String(workOrder);
     button.style.order = String(index);
     if (state.mode === VIEW.detail) {
-      const isActive = index === state.activeIndex;
+      const isActive = index === visibleThumbIndex;
       button.style.setProperty('--thumb-y', '0px');
       button.style.setProperty('--thumb-opacity', isActive ? '0.92' : '0.54');
       button.style.setProperty('--thumb-image-opacity', isActive ? '1' : '0.62');
@@ -3810,7 +3814,7 @@ function applyRailStyles() {
 
 function getRailTargets() {
   const railStep = getRailStep();
-  const railIndex = state.mode === VIEW.work ? state.workIndex : state.activeIndex;
+  const railIndex = getRailIndex();
   if (state.mode === VIEW.work) {
     return {
       railIndex,
@@ -3823,6 +3827,17 @@ function getRailTargets() {
   const targetOffset = Math.max(0, railIndex * railStep - railAnchor);
   const targetActiveY = railIndex * railStep - targetOffset;
   return { railIndex, railStep, targetActiveY, targetOffset };
+}
+
+function getRailPhotos() {
+  return state.albumPhotos.length ? state.albumPhotos : state.photos;
+}
+
+function getRailIndex() {
+  if (state.albumPhotos.length && (state.mode === VIEW.detail || state.mode === VIEW.work)) {
+    return clamp(state.workIndex, 0, Math.max(state.albumPhotos.length - 1, 0));
+  }
+  return state.mode === VIEW.work ? state.workIndex : state.activeIndex;
 }
 
 function getRailStep() {
