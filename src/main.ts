@@ -172,11 +172,13 @@ const SETUP_COPY = {
 const state = {
   activeIndex: 0,
   aboutReturnMode: VIEW.index,
+  albumPhotos: [],
   adminAuthenticated: false,
   adminGallery: { groups: [], photos: [] },
   adminLoading: false,
   adminStatus: '',
   curveLatency: 0,
+  currentGroupSlug: '',
   detailEntryStartedAt: 0,
   detailExitStartedAt: 0,
   detailMix: 0,
@@ -421,12 +423,28 @@ async function loadSetupStatus() {
 async function loadPhotos() {
   const groupSlug = routeGroupSlug();
   const standalonePhotoPath = isStandalonePhotoPath();
-  const endpoint = groupSlug
-    ? `/api/gallery?group=${encodeURIComponent(groupSlug)}`
-    : standalonePhotoPath
-      ? '/api/photos'
-      : '/api/gallery';
-  const manifest = await fetch(endpoint, { cache: 'no-store' })
+  if (standalonePhotoPath) {
+    state.currentGroupSlug = '';
+    state.albumPhotos = [];
+    const manifest = await fetchGalleryPayload('/api/photos');
+    return normalizePhotos(Array.isArray(manifest) ? manifest : manifest.photos || []);
+  }
+
+  const manifest = await fetchGalleryPayload('/api/gallery');
+  const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
+  const projects = normalizeAlbumProjects(Array.isArray(manifest) ? [] : manifest.groups || [], photos);
+  if (groupSlug) {
+    state.currentGroupSlug = groupSlug;
+    state.albumPhotos = photosForGroup(photos, groupSlug, projects);
+  } else {
+    state.currentGroupSlug = '';
+    state.albumPhotos = [];
+  }
+  return projects;
+}
+
+async function fetchGalleryPayload(endpoint) {
+  return fetch(endpoint, { cache: 'no-store' })
     .then((response) => (response.ok ? response.json() : Promise.reject()))
     .catch(() =>
       fetch('/data/photos.json', { cache: 'no-store' }).then((response) =>
@@ -434,12 +452,6 @@ async function loadPhotos() {
       ),
     )
     .catch(() => ({ photos: [] }));
-
-  const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
-  if (!groupSlug && !standalonePhotoPath) {
-    return normalizeAlbumProjects(Array.isArray(manifest) ? [] : manifest.groups || [], photos);
-  }
-  return normalizePhotos(photos);
 }
 
 function normalizePhotos(photos) {
@@ -525,20 +537,41 @@ function inferGroupsFromPhotos(photos) {
   return groups.length ? groups : [{ id: 'default', slug: 'default', title: 'Default Gallery', description: '' }];
 }
 
+function photosForGroup(photos, groupSlug, projects = state.photos) {
+  const project = projects.find((item) =>
+    item.group === groupSlug ||
+    item.slug === groupSlug ||
+    item.groupId === groupSlug,
+  );
+  const groupId = project?.groupId || groupSlug;
+  const normalized = normalizePhotos(photos).filter((photo) =>
+    photo.group === groupSlug ||
+    photo.groupId === groupId ||
+    (!photo.group && !photo.groupId && groupSlug === 'default'),
+  );
+  return normalized.length ? normalized : normalizePhotos(photos);
+}
+
+function getWorkPhotos() {
+  return state.albumPhotos.length ? state.albumPhotos : state.photos;
+}
+
 function getWorkMediaIndices(projectIndex = state.activeIndex) {
-  if (!state.photos.length) return [];
+  const workPhotos = getWorkPhotos();
+  if (!workPhotos.length) return [];
+  if (state.albumPhotos.length) return workPhotos.map((_, index) => index);
   const explicit = resolveExplicitWorkMedia(state.photos[projectIndex]);
   if (explicit.length) return explicit;
 
-  const limit = Math.min(WORK_MEDIA_WINDOW, state.photos.length);
+  const limit = Math.min(WORK_MEDIA_WINDOW, workPhotos.length);
   const indices = [];
   REFERENCE_WORK_MEDIA_OFFSETS.forEach((offset) => {
     const index = projectIndex + offset;
-    if (indices.length < limit && index >= 0 && index < state.photos.length) {
+    if (indices.length < limit && index >= 0 && index < workPhotos.length) {
       indices.push(index);
     }
   });
-  for (let offset = 1; indices.length < limit && projectIndex + offset < state.photos.length; offset += 1) {
+  for (let offset = 1; indices.length < limit && projectIndex + offset < workPhotos.length; offset += 1) {
     const forward = projectIndex + offset;
     if (!indices.includes(forward)) indices.push(forward);
   }
@@ -578,13 +611,13 @@ function getWorkMediaOrder(index) {
 }
 
 function getWorkImageSrc(index) {
-  const photo = state.photos[index];
+  const photo = getWorkPhotos()[index];
   return photo?.large || photo?.medium || photo?.thumb || '';
 }
 
 function getWorkVisitUrl() {
   const activePhoto = state.photos[state.activeIndex];
-  const workPhoto = state.photos[state.workIndex] || activePhoto;
+  const workPhoto = getWorkPhotos()[state.workIndex] || activePhoto;
   return activePhoto?.visitUrl || workPhoto?.visitUrl || getWorkImageSrc(state.workIndex) || getWorkImageSrc(state.activeIndex);
 }
 
@@ -648,7 +681,8 @@ function renderShell() {
       `,
     )
     .join('');
-  const workLayers = state.photos
+  const workPhotos = getWorkPhotos();
+  const workLayers = workPhotos
     .map(
       (photo, index) => `
         <div class="work-layer" data-work-index="${index}" aria-hidden="true">
@@ -1583,7 +1617,7 @@ function onPointerUp(event) {
       if (state.mode === VIEW.index) {
         setHomeScrollTargetIndex(state.paginationHoverIndex);
       } else {
-        setActive(state.paginationHoverIndex, true);
+        openIndexItem(state.paginationHoverIndex);
       }
       return;
     }
@@ -1599,7 +1633,7 @@ function onPointerUp(event) {
   if (state.mode === VIEW.detail && wasDragging && state.dragMoved < 9) {
     updateHoverFromPointer();
     if (state.hoverIndex < 0 || state.hoverIndex === state.activeIndex) return;
-    setActive(state.hoverIndex, true);
+    openIndexItem(state.hoverIndex);
   }
 }
 
@@ -1703,12 +1737,12 @@ function onKeyDown(event) {
     }
     if (key === 'ArrowRight' || key === ' ') {
       event.preventDefault();
-      setActive(state.activeIndex + 1, true);
+      openIndexItem(state.activeIndex + 1);
       return;
     }
     if (key === 'ArrowLeft') {
       event.preventDefault();
-      setActive(state.activeIndex - 1, true);
+      openIndexItem(state.activeIndex - 1);
       return;
     }
     if (key === 'Enter' || key === 'ArrowDown' || lowerKey === 'e') {
@@ -3076,30 +3110,50 @@ function setActive(index, snap = false) {
 
 function openIndexItem(index) {
   setActive(index, true);
-  if (openAlbumProject(index)) return;
+  if (state.photos[index]?.isAlbumProject) {
+    void openAlbumProject(index);
+    return;
+  }
   setMode(VIEW.detail);
 }
 
-function openAlbumProject(index = state.activeIndex) {
+async function openAlbumProject(index = state.activeIndex) {
   const project = state.photos[index];
-  if (!project?.isAlbumProject) return false;
+  if (!project?.isAlbumProject) return;
   const groupSlug = project.group || project.slug || project.groupId;
-  if (!groupSlug) return false;
-  window.location.assign(`/g/${encodeURIComponent(groupSlug)}`);
-  return true;
+  if (!groupSlug) return;
+  state.currentGroupSlug = groupSlug;
+  state.albumPhotos = await loadAlbumPhotos(groupSlug);
+  state.workIndex = 0;
+  goToPath(`/g/${encodeURIComponent(groupSlug)}`);
+  renderShell();
+  resize();
+  setMode(VIEW.detail, { updateRoute: false });
+  updateUi();
+  warmWorkMediaImages();
 }
 
 function closeDetailToIndex() {
-  if (routeGroupSlug()) {
-    window.location.assign('/');
+  if (state.currentGroupSlug || routeGroupSlug()) {
+    state.currentGroupSlug = '';
+    state.albumPhotos = [];
+    goToPath('/');
+    setMode(VIEW.index, { updateRoute: false });
     return;
   }
   setMode(VIEW.index);
 }
 
+async function loadAlbumPhotos(groupSlug) {
+  const manifest = await fetchGalleryPayload(`/api/gallery?group=${encodeURIComponent(groupSlug)}`);
+  const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
+  return normalizePhotos(photos);
+}
+
 function setWorkIndex(index) {
-  if (!state.photos.length) return;
-  const nextIndex = clamp(index, 0, state.photos.length - 1);
+  const workPhotos = getWorkPhotos();
+  if (!workPhotos.length) return;
+  const nextIndex = clamp(index, 0, workPhotos.length - 1);
   if (state.mode === VIEW.work && getWorkMediaOrder(nextIndex) < 0) return;
   const previousIndex = state.workIndex;
   if (nextIndex === previousIndex) return;
@@ -3116,10 +3170,14 @@ function setWorkIndex(index) {
   state.switchPulse = 1;
   state.railActiveLerp = WORK_SWITCH_FRAME_LERP;
   updateUi();
+  if (state.mode === VIEW.work) {
+    syncRouteForMode(VIEW.work, { replace: true });
+  }
   pulseWorkMedia();
 }
 
 function adoptWorkIndexAsActive() {
+  if (state.albumPhotos.length) return;
   if (!state.photos.length) return;
   const nextIndex = clamp(state.workIndex, 0, state.photos.length - 1);
   if (nextIndex === state.activeIndex) return;
@@ -3190,7 +3248,7 @@ function setMode(mode, options: LooseRecord = {}) {
     window.clearTimeout(workExitTimer);
     galleryEls.shell?.classList.remove('is-work-layer-exiting');
     const media = getWorkMediaIndices();
-    if (previousMode !== VIEW.about || !media.includes(state.workIndex)) {
+    if (!media.includes(state.workIndex)) {
       state.workIndex = media[0] ?? state.activeIndex;
     }
     preserveWorkFx = previousMode === VIEW.about && state.aboutReturnMode === VIEW.work;
@@ -3335,14 +3393,17 @@ function applyRouteState(options: LooseRecord = {}) {
 
   if (Number.isFinite(route.index)) {
     state.activeIndex = clamp(route.index, 0, Math.max(state.photos.length - 1, 0));
-    state.workIndex = state.activeIndex;
+    state.workIndex = Number.isFinite(route.workIndex)
+      ? clamp(route.workIndex, 0, Math.max(getWorkPhotos().length - 1, 0))
+      : (state.albumPhotos.length ? 0 : state.activeIndex);
     state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
     state.scroll = state.targetScroll;
   }
 
   if (initial || !updateMode) {
-    state.initialRouteMode = routeMode === VIEW.detail ? routeMode : null;
-    state.mode = routeMode === VIEW.detail ? VIEW.loading : routeMode;
+    const waitsForProjectScene = routeMode === VIEW.detail || routeMode === VIEW.work;
+    state.initialRouteMode = waitsForProjectScene ? routeMode : null;
+    state.mode = waitsForProjectScene ? VIEW.loading : routeMode;
     return;
   }
 
@@ -3355,27 +3416,34 @@ function syncRouteForMode(mode, options: LooseRecord = {}) {
   if (mode === VIEW.loading) return;
   const nextPath = routePathForMode(mode);
   if (!nextPath || window.location.pathname === nextPath) return;
-  const method = replace ? 'replaceState' : 'pushState';
-  history[method]({}, '', nextPath);
+  goToPath(nextPath, { replace });
 }
 
 function routePathForMode(mode) {
   if (mode === VIEW.about) return '/about';
   if (mode === VIEW.setup) return '/setup';
   if (mode === VIEW.studio) return '/studio';
-  if (mode === VIEW.detail || mode === VIEW.work) return photoPath(state.activeIndex);
+  if (mode === VIEW.detail || mode === VIEW.work) return photoPath(state.activeIndex, mode);
   return '/';
 }
 
-function photoPath(index) {
+function goToPath(path, options: LooseRecord = {}) {
+  if (!path || window.location.pathname === path) return;
+  const method = options.replace ? 'replaceState' : 'pushState';
+  history[method]({}, '', path);
+}
+
+function photoPath(index, mode = state.mode) {
   const photo = state.photos[index];
+  const currentGroupSlug = state.currentGroupSlug || routeGroupSlug();
+  if (currentGroupSlug && (state.albumPhotos.length || photo?.isAlbumProject)) {
+    if (mode !== VIEW.work) return `/g/${currentGroupSlug}`;
+    const workPhoto = getWorkPhotos()[state.workIndex] || state.albumPhotos[0];
+    return workPhoto ? `/g/${currentGroupSlug}/${workPhoto.slug || workPhoto.id}` : `/g/${currentGroupSlug}`;
+  }
   if (photo?.isAlbumProject) {
     const groupSlug = photo.group || photo.slug || photo.groupId;
     return groupSlug ? `/g/${groupSlug}` : '/';
-  }
-  const currentGroupSlug = routeGroupSlug();
-  if (currentGroupSlug && photo) {
-    return `/g/${currentGroupSlug}/${photo.slug || photo.id}`;
   }
   if (photo?.group && photo.group !== 'default') {
     return `/g/${photo.group}/${photo.slug || photo.id}`;
@@ -3389,10 +3457,21 @@ function getPathRoute() {
   if (isAboutPath()) return { mode: VIEW.about };
   const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   if (parts[0] === 'g' && parts[1]) {
-    if (!parts[2]) return { mode: state.photos.length ? VIEW.detail : VIEW.index, index: 0 };
-    const index = state.photos.findIndex((photo) => photo.slug === parts[2] || photo.id === parts[2]);
-    if (index >= 0) return { mode: VIEW.detail, index };
-    return { mode: state.photos.length ? VIEW.detail : VIEW.index, index: 0 };
+    const projectIndex = state.photos.findIndex((photo) =>
+      photo.group === parts[1] ||
+      photo.slug === parts[1] ||
+      photo.groupId === parts[1],
+    );
+    const index = projectIndex >= 0 ? projectIndex : 0;
+    const workIndex = parts[2]
+      ? state.albumPhotos.findIndex((photo) => photo.slug === parts[2] || photo.id === parts[2])
+      : 0;
+    const hasPhotoSlug = Boolean(parts[2]);
+    return {
+      mode: state.photos.length ? (hasPhotoSlug ? VIEW.work : VIEW.detail) : VIEW.index,
+      index,
+      workIndex: workIndex >= 0 ? workIndex : 0,
+    };
   }
   const slug = parts.join('/');
   if (slug) {
