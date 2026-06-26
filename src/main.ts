@@ -223,6 +223,7 @@ const state = {
   scroll: 0,
   scrollLagPx: 0,
   scrollLatencyPx: Number.NaN,
+  settleIndexAfterWorkExit: false,
   switchDirection: 1,
   switchPulse: 0,
   surfaceRgb: BASE_SURFACE_RGB.slice(),
@@ -3030,6 +3031,11 @@ function setMode(mode, options: LooseRecord = {}) {
   const { updateRoute = true } = options;
   const previousMode = state.mode;
   const exitingOverlayToIndex = mode === VIEW.index && (previousMode === VIEW.setup || previousMode === VIEW.studio);
+  const shouldSettleIndex = mode === VIEW.index && (
+    exitingOverlayToIndex ||
+    previousMode === VIEW.work ||
+    state.settleIndexAfterWorkExit
+  );
   let shouldPrimeWorkMotion = false;
   let preserveWorkFx = false;
   if (mode === VIEW.about && previousMode !== VIEW.about) {
@@ -3075,6 +3081,7 @@ function setMode(mode, options: LooseRecord = {}) {
     }, 1500);
   }
   if (mode === VIEW.work && previousMode !== VIEW.work) {
+    state.settleIndexAfterWorkExit = false;
     const media = getWorkMediaIndices();
     if (previousMode !== VIEW.about || !media.includes(state.workIndex)) {
       state.workIndex = media[0] ?? state.activeIndex;
@@ -3083,9 +3090,13 @@ function setMode(mode, options: LooseRecord = {}) {
     shouldPrimeWorkMotion = true;
   }
   if (mode !== VIEW.work && previousMode === VIEW.work) {
+    state.settleIndexAfterWorkExit = mode !== VIEW.index;
     state.exitingWorkIndex = -1;
     galleryEls.shell?.classList.remove('is-work-entry');
     window.clearTimeout(workEntryTimer);
+    window.clearTimeout(workMediaTimer);
+    galleryEls.shell?.classList.remove('is-work-media-switching');
+    hideWorkLayerMotion();
     hideWorkBgMotion();
     hideWorkThumbMotion();
   }
@@ -3107,7 +3118,8 @@ function setMode(mode, options: LooseRecord = {}) {
   }
   if (mode === VIEW.index) {
     state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
-    if (exitingOverlayToIndex) settleIndexSurface();
+    if (shouldSettleIndex) settleIndexSurface();
+    state.settleIndexAfterWorkExit = false;
   }
   if (mode === VIEW.studio) {
     ensureAdminLoaded();
@@ -3764,6 +3776,39 @@ function hideWorkThumbMotion() {
     motion.targetY = getThumbHiddenY(index);
   });
   state.workThumbMotionActive = true;
+}
+
+function hideWorkLayerMotion() {
+  const travel = getWorkLayerTravel();
+  const hiddenY = travel * (state.switchDirection || 1);
+  window.cancelAnimationFrame(workFxResetRaf);
+  galleryEls.shell?.classList.add('is-work-media-resetting');
+  state.workLayerMotion = galleryEls.workLayers?.map((layer, index) => {
+    const motion = state.workLayerMotion[index] || {};
+    const token = (motion.loadToken || 0) + 1;
+    layer.style.setProperty('--work-layer-y', `${hiddenY.toFixed(2)}px`);
+    layer.style.setProperty('--work-layer-opacity', '0.0000');
+    layer.style.setProperty('--work-layer-bg-opacity', '0.0000');
+    return {
+      ...motion,
+      bgOpacity: 0,
+      entered: false,
+      imageVisible: false,
+      loadStarted: false,
+      loadToken: token,
+      opacity: 0,
+      revealAt: Number.POSITIVE_INFINITY,
+      targetOpacity: 0,
+      targetY: hiddenY,
+      y: hiddenY,
+    };
+  }) || [];
+  state.workMotionActive = false;
+  void galleryEls.workStage?.offsetHeight;
+  workFxResetRaf = window.requestAnimationFrame(() => {
+    galleryEls.shell?.classList.remove('is-work-media-resetting');
+    workFxResetRaf = 0;
+  });
 }
 
 function primeWorkBgMotion(now = performance.now()) {
