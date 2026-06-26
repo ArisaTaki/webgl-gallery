@@ -225,7 +225,6 @@ const state = {
   scroll: 0,
   scrollLagPx: 0,
   scrollLatencyPx: Number.NaN,
-  settleIndexAfterWorkExit: false,
   switchDirection: 1,
   switchPulse: 0,
   surfaceRgb: BASE_SURFACE_RGB.slice(),
@@ -3030,14 +3029,28 @@ function setWorkIndex(index) {
   pulseWorkMedia();
 }
 
+function adoptWorkIndexAsActive() {
+  if (!state.photos.length) return;
+  const nextIndex = clamp(state.workIndex, 0, state.photos.length - 1);
+  if (nextIndex === state.activeIndex) return;
+  const previousIndex = state.activeIndex;
+  state.activeIndex = nextIndex;
+  state.exitingProjectIndex = previousIndex;
+  state.switchPulse = 1;
+  state.targetScroll = clamp(nextIndex * getStep(), 0, getMaxScroll());
+  startPaginationDigitMotion(previousIndex, nextIndex);
+}
+
 function setMode(mode, options: LooseRecord = {}) {
   const { updateRoute = true } = options;
   const previousMode = state.mode;
+  if (previousMode === VIEW.work && (mode === VIEW.detail || mode === VIEW.index)) {
+    adoptWorkIndexAsActive();
+  }
   const exitingOverlayToIndex = mode === VIEW.index && (previousMode === VIEW.setup || previousMode === VIEW.studio);
   const shouldSettleIndex = mode === VIEW.index && (
     exitingOverlayToIndex ||
-    previousMode === VIEW.work ||
-    state.settleIndexAfterWorkExit
+    previousMode === VIEW.work
   );
   let shouldPrimeWorkMotion = false;
   let preserveWorkFx = false;
@@ -3086,7 +3099,6 @@ function setMode(mode, options: LooseRecord = {}) {
   if (mode === VIEW.work && previousMode !== VIEW.work) {
     window.clearTimeout(workExitTimer);
     galleryEls.shell?.classList.remove('is-work-layer-exiting');
-    state.settleIndexAfterWorkExit = false;
     const media = getWorkMediaIndices();
     if (previousMode !== VIEW.about || !media.includes(state.workIndex)) {
       state.workIndex = media[0] ?? state.activeIndex;
@@ -3095,7 +3107,6 @@ function setMode(mode, options: LooseRecord = {}) {
     shouldPrimeWorkMotion = true;
   }
   if (mode !== VIEW.work && previousMode === VIEW.work) {
-    state.settleIndexAfterWorkExit = mode !== VIEW.index;
     state.exitingWorkIndex = -1;
     galleryEls.shell?.classList.remove('is-work-entry');
     window.clearTimeout(workEntryTimer);
@@ -3124,7 +3135,6 @@ function setMode(mode, options: LooseRecord = {}) {
   if (mode === VIEW.index) {
     state.targetScroll = clamp(state.activeIndex * getStep(), 0, getMaxScroll());
     if (shouldSettleIndex) settleIndexSurface();
-    state.settleIndexAfterWorkExit = false;
   }
   if (mode === VIEW.studio) {
     ensureAdminLoaded();
