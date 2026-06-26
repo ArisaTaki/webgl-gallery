@@ -420,7 +420,12 @@ async function loadSetupStatus() {
 
 async function loadPhotos() {
   const groupSlug = routeGroupSlug();
-  const endpoint = groupSlug ? `/api/gallery?group=${encodeURIComponent(groupSlug)}` : '/api/photos';
+  const standalonePhotoPath = isStandalonePhotoPath();
+  const endpoint = groupSlug
+    ? `/api/gallery?group=${encodeURIComponent(groupSlug)}`
+    : standalonePhotoPath
+      ? '/api/photos'
+      : '/api/gallery';
   const manifest = await fetch(endpoint, { cache: 'no-store' })
     .then((response) => (response.ok ? response.json() : Promise.reject()))
     .catch(() =>
@@ -430,7 +435,11 @@ async function loadPhotos() {
     )
     .catch(() => ({ photos: [] }));
 
-  return normalizePhotos(Array.isArray(manifest) ? manifest : manifest.photos || []);
+  const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
+  if (!groupSlug && !standalonePhotoPath) {
+    return normalizeAlbumProjects(Array.isArray(manifest) ? [] : manifest.groups || [], photos);
+  }
+  return normalizePhotos(photos);
 }
 
 function normalizePhotos(photos) {
@@ -450,6 +459,70 @@ function normalizePhotos(photos) {
       visitUrl: photo.visitUrl || photo.visit || '',
     };
   });
+}
+
+function normalizeAlbumProjects(groups, photos) {
+  const normalizedPhotos = normalizePhotos(photos);
+  const inferredGroups = inferGroupsFromPhotos(normalizedPhotos);
+  const sourceGroups = groups.length ? groups : inferredGroups;
+  return sourceGroups
+    .map((group, index) => {
+      const groupSlug = group.slug || group.id || `album-${index + 1}`;
+      const groupPhotos = normalizedPhotos.filter((photo) =>
+        photo.groupId === group.id ||
+        photo.group === groupSlug ||
+        (!photo.groupId && !photo.group && index === 0),
+      );
+      const cover =
+        groupPhotos.find((photo) => photo.id === group.coverPhotoId || photo.slug === group.coverPhotoId) ||
+        groupPhotos[0];
+      if (!cover) return null;
+      const photoRgb = parseRgbColor(cover.color) || [188, 148, 57];
+      const palette = createPhotoPalette(photoRgb, index);
+      return {
+        ...cover,
+        albumPhotoCount: groupPhotos.length,
+        code: String(index + 1).padStart(2, '0'),
+        color: rgbCss(photoRgb),
+        coverPhotoId: cover.id,
+        coverPhotoSlug: cover.slug || cover.id,
+        description: group.description || cover.description || `${groupPhotos.length} photos`,
+        group: groupSlug,
+        groupId: group.id || groupSlug,
+        groupTitle: group.title || cover.groupTitle || cover.title,
+        id: `album-${group.id || groupSlug}`,
+        inOverLight: photoInOverLightFor(palette),
+        index: index + 1,
+        isAlbumProject: true,
+        multiply: photoMultiplyFor(palette),
+        palette,
+        slug: groupSlug,
+        title: group.title || cover.groupTitle || cover.title || `Album ${index + 1}`,
+        visitUrl: '',
+        workMedia: [],
+      };
+    })
+    .filter(Boolean);
+}
+
+function inferGroupsFromPhotos(photos) {
+  const groups = [];
+  const seen = new Set();
+  photos.forEach((photo) => {
+    const slug = photo.group || photo.groupId || 'default';
+    if (seen.has(slug)) return;
+    seen.add(slug);
+    groups.push({
+      id: photo.groupId || slug,
+      slug,
+      title: photo.groupTitle || (slug === 'default' ? 'Default Gallery' : slug.replace(/[-_]+/g, ' ')),
+      description: '',
+      coverPhotoId: null,
+      sortOrder: groups.length,
+      visibility: 'public',
+    });
+  });
+  return groups.length ? groups : [{ id: 'default', slug: 'default', title: 'Default Gallery', description: '' }];
 }
 
 function getWorkMediaIndices(projectIndex = state.activeIndex) {
@@ -1234,8 +1307,7 @@ function attachEvents() {
       if (state.mode === VIEW.work) {
         if (getWorkMediaOrder(thumbIndex) >= 0) setWorkIndex(thumbIndex);
       } else {
-        setActive(thumbIndex, true);
-        setMode(VIEW.detail);
+        openIndexItem(thumbIndex);
       }
       return;
     }
@@ -1243,7 +1315,11 @@ function attachEvents() {
     if (!action) return;
     const name = action.dataset.action;
     if (name === 'close-detail') {
-      setMode(state.mode === VIEW.work ? VIEW.detail : VIEW.index);
+      if (state.mode === VIEW.work) {
+        setMode(VIEW.detail);
+      } else {
+        closeDetailToIndex();
+      }
     }
     if (name === 'next-photo') {
       if (state.mode === VIEW.work) {
@@ -1434,7 +1510,7 @@ function onWheel(event) {
   if (state.mode === VIEW.detail) {
     state.transition = Math.max(state.transition, 0.88);
     state.switchPulse = Math.max(state.switchPulse, 0.72);
-    setMode(VIEW.index);
+    closeDetailToIndex();
     return;
   }
 
@@ -1483,7 +1559,7 @@ function onPointerMove(event) {
       state.transition = Math.max(state.transition, 0.72);
       state.switchPulse = Math.max(state.switchPulse, 0.5);
       markHomeMotionActive();
-      setMode(VIEW.index);
+      closeDetailToIndex();
     }
     return;
   }
@@ -1516,8 +1592,7 @@ function onPointerUp(event) {
   if (state.mode === VIEW.index && wasDragging && state.dragMoved < 9) {
     updateHoverFromPointer();
     if (state.hoverIndex < 0) return;
-    setActive(state.hoverIndex, true);
-    setMode(VIEW.detail);
+    openIndexItem(state.hoverIndex);
     return;
   }
 
@@ -1578,8 +1653,7 @@ function onKeyDown(event) {
     if (key === 'Enter' || key === 'ArrowDown') {
       event.preventDefault();
       const targetIndex = state.hoverIndex >= 0 ? state.hoverIndex : state.activeIndex;
-      setActive(targetIndex, true);
-      setMode(VIEW.detail);
+      openIndexItem(targetIndex);
     }
     return;
   }
@@ -1644,7 +1718,7 @@ function onKeyDown(event) {
     }
     if (key === 'Escape' || key === 'ArrowUp') {
       event.preventDefault();
-      setMode(VIEW.index);
+      closeDetailToIndex();
     }
     return;
   }
@@ -3000,6 +3074,29 @@ function setActive(index, snap = false) {
   }
 }
 
+function openIndexItem(index) {
+  setActive(index, true);
+  if (openAlbumProject(index)) return;
+  setMode(VIEW.detail);
+}
+
+function openAlbumProject(index = state.activeIndex) {
+  const project = state.photos[index];
+  if (!project?.isAlbumProject) return false;
+  const groupSlug = project.group || project.slug || project.groupId;
+  if (!groupSlug) return false;
+  window.location.assign(`/g/${encodeURIComponent(groupSlug)}`);
+  return true;
+}
+
+function closeDetailToIndex() {
+  if (routeGroupSlug()) {
+    window.location.assign('/');
+    return;
+  }
+  setMode(VIEW.index);
+}
+
 function setWorkIndex(index) {
   if (!state.photos.length) return;
   const nextIndex = clamp(index, 0, state.photos.length - 1);
@@ -3272,6 +3369,14 @@ function routePathForMode(mode) {
 
 function photoPath(index) {
   const photo = state.photos[index];
+  if (photo?.isAlbumProject) {
+    const groupSlug = photo.group || photo.slug || photo.groupId;
+    return groupSlug ? `/g/${groupSlug}` : '/';
+  }
+  const currentGroupSlug = routeGroupSlug();
+  if (currentGroupSlug && photo) {
+    return `/g/${currentGroupSlug}/${photo.slug || photo.id}`;
+  }
   if (photo?.group && photo.group !== 'default') {
     return `/g/${photo.group}/${photo.slug || photo.id}`;
   }
@@ -3284,10 +3389,10 @@ function getPathRoute() {
   if (isAboutPath()) return { mode: VIEW.about };
   const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   if (parts[0] === 'g' && parts[1]) {
-    if (!parts[2]) return { mode: VIEW.index };
+    if (!parts[2]) return { mode: state.photos.length ? VIEW.detail : VIEW.index, index: 0 };
     const index = state.photos.findIndex((photo) => photo.slug === parts[2] || photo.id === parts[2]);
     if (index >= 0) return { mode: VIEW.detail, index };
-    return { mode: VIEW.index };
+    return { mode: state.photos.length ? VIEW.detail : VIEW.index, index: 0 };
   }
   const slug = parts.join('/');
   if (slug) {
@@ -3326,6 +3431,12 @@ function isAboutPath() {
 function routeGroupSlug() {
   const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   return parts[0] === 'g' ? parts[1] || '' : '';
+}
+
+function isStandalonePhotoPath() {
+  if (isSetupPath() || isStudioPath() || isAboutPath()) return false;
+  const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+  return Boolean(parts.length && parts[0] !== 'g');
 }
 
 function clamp(value, min, max) {
