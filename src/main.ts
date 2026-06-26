@@ -691,9 +691,28 @@ function renderShell() {
       `,
     )
     .join('');
+  const emptyState = !total
+    ? `
+      <section class="empty-gallery" aria-label="Gallery is ready for its first album">
+        <div class="empty-gallery-mark" aria-hidden="true">
+          <span>IROP</span>
+          <span>GALLERY</span>
+        </div>
+        <div class="empty-gallery-copy">
+          <p>ARCHIVE READY</p>
+          <h1>WAITING<br />FOR FIRST ALBUM</h1>
+        </div>
+        <div class="empty-gallery-actions">
+          <button type="button" data-action="studio-link">OPEN STUDIO</button>
+          <button type="button" data-action="setup-link">SETUP</button>
+        </div>
+        <p class="empty-gallery-note">LOCAL STORAGE / CLOUD READY</p>
+      </section>
+    `
+    : '';
 
   app.innerHTML = `
-    <section class="gallery-shell is-${state.mode}" data-mode="${state.mode}">
+    <section class="gallery-shell is-${state.mode}${total ? '' : ' is-empty'}" data-mode="${state.mode}">
       <section class="mobile-fallback" aria-label="移动端提示">
         <header class="mobile-fallback-top">
           <strong>IROP GALLERY</strong>
@@ -837,6 +856,8 @@ function renderShell() {
         <span data-total>${String(total).padStart(3, '0')}</span>
         <strong data-title>念念 001</strong>
       </section>
+
+      ${emptyState}
 
       <section class="about-panel" aria-label="关于念念照片档案" aria-hidden="${state.mode !== VIEW.about}">
         <div class="about-hero" aria-hidden="true">
@@ -2739,7 +2760,8 @@ function estimatePointerIndex() {
 
 function updateUi() {
   const photo = state.photos[state.activeIndex];
-  const current = String(state.activeIndex + 1).padStart(3, '0');
+  const currentNumber = state.photos.length ? state.activeIndex + 1 : 0;
+  const current = String(currentNumber).padStart(3, '0');
   const total = String(state.photos.length).padStart(3, '0');
   const palette = photo?.palette || createPhotoPalette([188, 148, 57], 0);
   const photoRgb = palette.photo;
@@ -2833,10 +2855,22 @@ function updateUi() {
   galleryEls.thumbs?.forEach((button, index) => {
     const workOrder = getWorkMediaOrder(index);
     const isWorkMedia = state.mode === VIEW.work && workOrder >= 0;
+    const thumbImage = button.querySelector('span') as HTMLElement | null;
+    const thumbSrc = thumbImage?.dataset.thumbSrc || '';
+    if (state.mode === VIEW.detail && thumbImage && thumbSrc && thumbImage.dataset.loaded !== 'true') {
+      thumbImage.style.backgroundImage = `url("${thumbSrc.replace(/"/g, '%22')}")`;
+      thumbImage.dataset.loaded = 'true';
+    }
     button.classList.toggle('is-active', index === visibleWorkIndex);
     button.classList.toggle('is-work-media', isWorkMedia);
     button.dataset.workOrder = String(workOrder);
     button.style.order = String(index);
+    if (state.mode === VIEW.detail) {
+      const isActive = index === state.activeIndex;
+      button.style.setProperty('--thumb-y', '0px');
+      button.style.setProperty('--thumb-opacity', isActive ? '0.92' : '0.54');
+      button.style.setProperty('--thumb-image-opacity', isActive ? '1' : '0.62');
+    }
     button.tabIndex = state.mode === VIEW.work ? (isWorkMedia ? 0 : -1) : 0;
     button.setAttribute('aria-hidden', String(state.mode === VIEW.work && !isWorkMedia));
   });
@@ -3109,9 +3143,11 @@ function setActive(index, snap = false) {
 }
 
 function openIndexItem(index) {
-  setActive(index, true);
-  if (state.photos[index]?.isAlbumProject) {
-    void openAlbumProject(index);
+  if (!state.photos.length) return;
+  const nextIndex = clamp(index, 0, state.photos.length - 1);
+  setActive(nextIndex, true);
+  if (state.photos[nextIndex]?.isAlbumProject) {
+    void openAlbumProject(nextIndex);
     return;
   }
   setMode(VIEW.detail);
@@ -3954,6 +3990,11 @@ function primeWorkThumbMotion(options: LooseRecord = {}) {
 }
 
 function hideWorkThumbMotion() {
+  if (state.mode === VIEW.detail) {
+    state.workThumbMotion = [];
+    state.workThumbMotionActive = false;
+    return;
+  }
   ensureWorkThumbMotion();
   state.workThumbMotion.forEach((motion, index) => {
     motion.entered = false;
@@ -4093,10 +4134,10 @@ function ensureWorkThumbMotion() {
 
 function updateWorkThumbMotion() {
   if (!galleryEls.thumbs?.length) return;
-  ensureWorkThumbMotion();
   const now = performance.now();
-  const active = state.mode === VIEW.work || state.workThumbMotionActive || state.workMix > 0.01;
+  const active = state.mode === VIEW.work || state.workThumbMotionActive;
   if (!active) return;
+  ensureWorkThumbMotion();
 
   let moving = false;
   state.workThumbMotion.forEach((motion, index) => {

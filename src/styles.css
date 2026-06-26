@@ -164,6 +164,7 @@ a {
 .visit-link,
 .index-note,
 .index-readout,
+.empty-gallery,
 .setup-panel,
 .studio-panel {
   position: absolute;
@@ -499,6 +500,120 @@ a {
 .gallery-shell.is-detail .index-note,
 .gallery-shell.is-work .index-note {
   opacity: 1;
+}
+
+.gallery-shell.is-empty .index-note,
+.gallery-shell.is-empty .index-readout,
+.gallery-shell.is-empty .project-shadow,
+.gallery-shell.is-empty .pagination-canvas,
+.gallery-shell.is-empty .pagination-digits,
+.gallery-shell.is-empty .meter,
+.gallery-shell.is-empty .detail-rail,
+.gallery-shell.is-empty .visit-link {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.empty-gallery {
+  inset: 0;
+  display: grid;
+  grid-template:
+    "mark copy" 1fr
+    "note actions" auto / minmax(180px, 28vw) minmax(0, 1fr);
+  gap: 28px;
+  align-items: end;
+  padding: 13.5vh 50px 50px;
+  color: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  text-transform: uppercase;
+  transform: translateY(18px);
+  transition:
+    opacity 760ms cubic-bezier(0.19, 1, 0.22, 1),
+    transform 760ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.gallery-shell.is-empty.is-index .empty-gallery {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.empty-gallery-mark {
+  grid-area: mark;
+  align-self: start;
+  display: grid;
+  gap: 3px;
+  font-family: var(--font-condensed);
+  line-height: 0.78;
+}
+
+.empty-gallery-mark span:first-child {
+  font-size: clamp(72px, 11vw, 168px);
+  transform: scaleX(0.56);
+  transform-origin: left center;
+}
+
+.empty-gallery-mark span:nth-child(2) {
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.empty-gallery-copy {
+  grid-area: copy;
+  align-self: center;
+  max-width: min(820px, 62vw);
+}
+
+.empty-gallery-copy p,
+.empty-gallery-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+.empty-gallery-copy h1 {
+  margin: 12px 0 0;
+  font-family: Impact, var(--font-condensed);
+  font-size: clamp(76px, 10vw, 156px);
+  font-weight: 900;
+  line-height: 0.78;
+  letter-spacing: 0;
+  transform: scaleX(0.78);
+  transform-origin: left center;
+}
+
+.empty-gallery-actions {
+  grid-area: actions;
+  justify-self: end;
+  display: flex;
+  gap: 12px;
+}
+
+.empty-gallery-actions button {
+  min-width: 118px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(var(--text-rgb), 0.72);
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.empty-gallery-actions button:first-child {
+  background: rgb(var(--text-rgb));
+  color: var(--black);
+}
+
+.empty-gallery-note {
+  grid-area: note;
+  align-self: end;
 }
 
 .gallery-shell.is-detail .index-note-left,
@@ -1512,13 +1627,20 @@ a {
 
 .gallery-shell.is-detail .detail-rail,
 .gallery-shell.is-work .detail-rail {
-  opacity: 0;
   pointer-events: auto;
   transform: translate(0, -50%);
 }
 
+.gallery-shell.is-detail .detail-rail {
+  opacity: 0.62;
+}
+
 .gallery-shell.is-work .detail-rail {
   opacity: 0.74;
+}
+
+.gallery-shell.is-detail .detail-rail-active {
+  opacity: 0.62;
 }
 
 .gallery-shell.is-work .detail-rail-active {
@@ -1553,6 +1675,11 @@ a {
   opacity: var(--thumb-opacity, 1);
 }
 
+.gallery-shell.is-detail .detail-thumb {
+  opacity: var(--thumb-opacity, 0.54);
+  transform: translate3d(0, var(--thumb-y, 0px), 0);
+}
+
 .gallery-shell.is-work .detail-thumb:not(.is-work-media) {
   pointer-events: none;
 }
@@ -1570,6 +1697,10 @@ a {
 
 .gallery-shell.is-work .detail-thumb.is-thumb-image-visible span {
   transition: opacity 1000ms cubic-bezier(0.39, 0.575, 0.565, 1);
+}
+
+.gallery-shell.is-detail .detail-thumb span {
+  opacity: var(--thumb-image-opacity, 0.62);
 }
 
 .gallery-shell.is-work-media-resetting .detail-thumb span {
