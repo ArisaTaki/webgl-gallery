@@ -1,10 +1,9 @@
 import crypto from 'node:crypto';
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { constants } from 'node:fs';
 import { createPasswordHash } from './auth.js';
 import { getBuiltinDatabaseSync, hasBuiltinSqlite, sqliteUnavailableMessage } from './sqlite.js';
-import { hasR2Config } from './storage.js';
+import { hasR2Config, missingR2ConfigFields, verifyStorageConfig } from './storage.js';
 
 export async function loadRuntimeConfig(paths) {
   const configPath = getRuntimeConfigPath(paths);
@@ -14,6 +13,9 @@ export async function loadRuntimeConfig(paths) {
   const config = mergeConfig(defaultRuntimeConfig({ ...paths, configDir, sqliteAvailable }), fileConfig || {});
   const envOverrides = envRuntimeOverrides();
   const effectiveConfig = mergeConfig(config, envOverrides);
+  if (process.env.GALLERY_PORTABLE_PATHS === '1') {
+    applyPortablePaths(effectiveConfig, { ...paths, configDir });
+  }
   effectiveConfig.database.sqliteAvailable = sqliteAvailable;
   if (effectiveConfig.database.kind === 'sqlite' && !sqliteAvailable) {
     effectiveConfig.setupComplete = false;
@@ -40,7 +42,7 @@ export async function saveRuntimeConfig(paths, currentRuntime, input) {
     paths,
     configDir,
   });
-  await validateRuntimeConfig(nextConfig);
+  await validateRuntimeConfig(nextConfig, { paths, verifyStorage: input?.skipStorageCheck !== true });
   nextConfig.database.sqliteAvailable = sqliteAvailable;
   await mkdir(configDir, { recursive: true });
   await writeFile(configPath, `${JSON.stringify(redactRuntimeConfig(nextConfig, { keepSecrets: true }), null, 2)}\n`);
@@ -68,17 +70,20 @@ export function publicSetupStatus(runtime) {
     configured: isStorageConfigured(config.storage),
     mediaDir: config.storage.kind === 'local' ? config.storage.mediaDir : '',
     originalDir: config.storage.kind === 'local' ? config.storage.originalDir : '',
+    accountId: config.storage.kind === 'r2' ? config.storage.r2?.accountId || '' : '',
+    publicBucket: config.storage.kind === 'r2' ? config.storage.r2?.publicBucket || '' : '',
+    privateBucket: config.storage.kind === 'r2' ? config.storage.r2?.privateBucket || '' : '',
     publicBaseUrl: config.storage.kind === 'r2' ? config.storage.r2?.publicBaseUrl || '' : '',
     hasR2Credentials: hasR2Config(config.storage),
   };
   return {
     ok: true,
-    configured: Boolean(config.setupComplete && isDatabaseConfigured(config.database) && isStorageConfigured(config.storage)),
+    configured: Boolean(config.setupComplete && isDatabaseConfigured(config.database) && isStorageConfigured(config.storage) && hasAdminPassword(config)),
     configPath: runtime.configPath,
     database,
     storage,
     auth: {
-      hasAdminPassword: Boolean(config.auth.adminPasswordHash || process.env.GALLERY_ADMIN_PASSWORD_HASH),
+      hasAdminPassword: hasAdminPassword(config),
       hasSessionSecret: Boolean(config.auth.sessionSecret || process.env.SESSION_SECRET),
     },
     checks: buildSetupChecks(config),
@@ -155,12 +160,19 @@ function normalizeSetupInput({ input, currentConfig, paths, configDir }) {
   };
 }
 
-async function validateRuntimeConfig(config) {
+async function validateRuntimeConfig(config, options: any = {}) {
   if (!isDatabaseConfigured(config.database)) {
     throw httpError(400, databaseRequiredMessage(config.database.kind));
   }
   if (!isStorageConfigured(config.storage)) {
-    throw httpError(400, 'R2 storage requires account id, access keys, both buckets, and public base URL.');
+    if (config.storage?.kind === 'r2') {
+      const missing = ` Missing: ${missingR2ConfigFields(config.storage).join(', ')}.`;
+      throw httpError(400, `R2 storage requires account id, access keys, both buckets, and public base URL.${missing}`);
+    }
+    throw httpError(400, 'Local storage requires public media and original backup folders.');
+  }
+  if (!hasAdminPassword(config)) {
+    throw httpError(400, 'Admin password is required.');
   }
   if (config.database.kind === 'sqlite') {
     const DatabaseSync = await getBuiltinDatabaseSync();
@@ -173,11 +185,12 @@ async function validateRuntimeConfig(config) {
   if (config.database.kind === 'json') {
     await mkdir(path.dirname(config.database.manifestPath), { recursive: true });
   }
-  if (config.storage.kind === 'local') {
-    await mkdir(config.storage.mediaDir, { recursive: true });
-    await mkdir(config.storage.originalDir, { recursive: true });
-    await access(config.storage.mediaDir, constants.W_OK);
-    await access(config.storage.originalDir, constants.W_OK);
+  if (options.verifyStorage !== false) {
+    try {
+      await verifyStorageConfig(config.storage, { publicDir: options.paths?.publicDir });
+    } catch (error: any) {
+      throw httpError(400, error.message || 'Storage check failed.');
+    }
   }
 }
 
@@ -210,9 +223,13 @@ function buildSetupChecks(config) {
     {
       key: 'admin',
       label: 'Admin password',
-      ok: Boolean(config.auth.adminPasswordHash || process.env.GALLERY_ADMIN_PASSWORD_HASH),
+      ok: hasAdminPassword(config),
     },
   ];
+}
+
+function hasAdminPassword(config) {
+  return Boolean(config.auth?.adminPasswordHash || process.env.GALLERY_ADMIN_PASSWORD_HASH);
 }
 
 function envRuntimeOverrides() {
@@ -253,6 +270,19 @@ function envRuntimeOverrides() {
     };
   }
   return overrides;
+}
+
+function applyPortablePaths(config, paths) {
+  if (config.database?.kind === 'sqlite') {
+    config.database.sqlitePath = path.join(paths.configDir, 'gallery.sqlite');
+  }
+  if (config.database?.kind === 'json') {
+    config.database.manifestPath = paths.manifestPath;
+  }
+  if (config.storage?.kind === 'local') {
+    config.storage.mediaDir = paths.mediaDir;
+    config.storage.originalDir = paths.originalDir;
+  }
 }
 
 function hasExplicitRuntimeEnv() {
@@ -322,7 +352,7 @@ function mergeConfig(base, override) {
   };
 }
 
-function redactRuntimeConfig(config, { keepSecrets = false } = {}) {
+export function redactRuntimeConfig(config, { keepSecrets = false } = {}) {
   if (keepSecrets) return config;
   return {
     ...config,

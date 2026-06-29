@@ -6,6 +6,12 @@
   "scripts": {
     "dev": "tsx server/index.ts",
     "start": "tsx server/index.ts",
+    "setup": "tsx scripts/setup-gallery.ts",
+    "bootstrap": "node scripts/bootstrap.mjs",
+    "doctor": "tsx scripts/gallery-doctor.ts",
+    "docker:test": "node scripts/qa-docker-v1.mjs && node scripts/qa-docker-install-v1.mjs && node scripts/qa-docker-image-install-v1.mjs",
+    "package:release": "node scripts/package-release.mjs",
+    "release:test": "npm run typecheck && npm test && npm run package:release && node scripts/qa-release-package-v1.mjs && npm run docker:test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
@@ -13,7 +19,7 @@
     "migrate:manifest": "tsx scripts/migrate-manifest-to-db.ts",
     "preview": "NODE_ENV=production tsx server/index.ts",
     "sync:photos": "tsx scripts/sync-photos.ts",
-    "test": "tsx scripts/qa-gallery-core.ts && node scripts/qa-admin-api-v112.mjs && node scripts/qa-setup-wizard-v1.mjs && node scripts/qa-setup-no-sqlite-v1.mjs",
+    "test": "tsx scripts/qa-gallery-core.ts && node scripts/qa-admin-api-v112.mjs && node scripts/qa-setup-wizard-v1.mjs && node scripts/qa-setup-no-sqlite-v1.mjs && node scripts/qa-setup-env-first-run-v1.mjs && node scripts/qa-installer-v1.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

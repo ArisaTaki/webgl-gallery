@@ -12,6 +12,10 @@
   <body>
     <canvas id="webgl" aria-label="念念照片画廊"></canvas>
     <main id="app"></main>
+    <nav class="empty-direct-actions" aria-label="Empty gallery actions">
+      <a href="/studio" data-direct-route="/studio" onpointerdown="window.location.href='/studio'">OPEN STUDIO</a>
+      <a href="/setup" data-direct-route="/setup" onpointerdown="window.location.href='/setup'">SETUP</a>
+    </nav>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

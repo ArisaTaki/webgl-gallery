@@ -2,27 +2,20 @@ import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import { mkdir, readFile, unlink } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
 import { clearAdminSessionCookie, createAdminSessionCookie, isAdminRequest, requireAdmin, verifyAdminPassword } from './auth.js';
 import { createGalleryStore } from './galleryStore.js';
 import { ensureGalleryDirs } from './photoPipeline.js';
 import { loadRuntimeConfig, publicSetupStatus, saveRuntimeConfig } from './runtimeConfig.js';
+import { projectRootFromImportMeta, resolveRuntimePaths } from './runtimePaths.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, '..');
-const publicDir = path.join(root, 'public');
+const runtimePaths = resolveRuntimePaths(projectRootFromImportMeta(import.meta.url));
+const { root, publicDir, dataDir, mediaDir, uploadDir, originalDir, manifestPath } = runtimePaths;
 const distDir = path.join(root, 'dist');
-const dataDir = path.resolve(process.env.GALLERY_DATA_DIR || path.join(publicDir, 'data'));
-const mediaDir = path.resolve(process.env.GALLERY_MEDIA_DIR || path.join(publicDir, 'media'));
-const uploadDir = path.resolve(process.env.GALLERY_UPLOAD_DIR || path.join(root, '.uploads', 'tmp'));
-const originalDir = path.resolve(process.env.GALLERY_ORIGINAL_DIR || path.join(root, '.uploads', 'originals'));
-const manifestPath = path.resolve(process.env.GALLERY_MANIFEST_PATH || path.join(dataDir, 'photos.json'));
 const port = Number(process.env.PORT || 5279);
 const uploadKey = process.env.GALLERY_UPLOAD_KEY || '13209';
 const isProduction = process.env.NODE_ENV === 'production';
 const disableHmr = process.env.GALLERY_DISABLE_HMR === '1';
-const runtimePaths = { root, publicDir, dataDir, mediaDir, uploadDir, originalDir, manifestPath };
 
 await ensureGalleryDirs({ dataDir, mediaDir, uploadDir });
 await mkdir(originalDir, { recursive: true });
@@ -285,7 +278,7 @@ function publicMediaDir() {
 }
 
 function requireSetupAccess(request, response, next) {
-  if (!runtime.config.setupComplete || isAdminRequest(request)) {
+  if (!publicSetupStatus(runtime).configured || isAdminRequest(request)) {
     next();
     return;
   }

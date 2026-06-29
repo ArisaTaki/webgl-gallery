@@ -268,6 +268,7 @@ camera.position.z = 1 / Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV) / 2);
 
 const clock = new THREE.Clock();
 const loader = new THREE.TextureLoader();
+loader.setCrossOrigin('anonymous');
 const rendererClearColor = new THREE.Color(0x141414);
 const pointer = new THREE.Vector2(0.5, 0.5);
 const planes: any[] = [];
@@ -376,6 +377,7 @@ const morphHoverState = new WeakMap();
 init();
 
 async function init() {
+  ensureEmptyDirectActions();
   state.setupStatus = await loadSetupStatus();
   if (state.setupStatus && !state.setupStatus.configured && !isSetupPath()) {
     history.replaceState({}, '', '/setup');
@@ -406,6 +408,29 @@ async function init() {
   });
 
   requestAnimationFrame(tick);
+}
+
+function ensureEmptyDirectActions() {
+  if (document.querySelector('.empty-direct-actions')) return;
+  const nav = document.createElement('nav');
+  nav.className = 'empty-direct-actions';
+  nav.setAttribute('aria-label', 'Empty gallery actions');
+  const studio = document.createElement('a');
+  studio.href = '/studio';
+  studio.dataset.directRoute = '/studio';
+  studio.onpointerdown = () => {
+    window.location.href = '/studio';
+  };
+  studio.textContent = 'OPEN STUDIO';
+  const setup = document.createElement('a');
+  setup.href = '/setup';
+  setup.dataset.directRoute = '/setup';
+  setup.onpointerdown = () => {
+    window.location.href = '/setup';
+  };
+  setup.textContent = 'SETUP';
+  nav.append(studio, setup);
+  document.body.append(nav);
 }
 
 async function loadSetupStatus() {
@@ -629,6 +654,7 @@ function warmWorkLayerImage(index) {
   if (cached) return cached.promise;
 
   const image = new Image();
+  image.crossOrigin = 'anonymous';
   image.src = src;
   const promise = image.decode
     ? image.decode().catch(() => undefined).then(() => src)
@@ -687,7 +713,7 @@ function renderShell() {
     .map(
       (photo, index) => `
         <div class="work-layer" data-work-index="${index}" aria-hidden="true">
-          <img class="work-layer-img" src="${EMPTY_MEDIA_SRC}" data-work-src="${photo.large || photo.medium || photo.thumb || ''}" alt="" draggable="false" loading="lazy" />
+          <img class="work-layer-img" src="${EMPTY_MEDIA_SRC}" data-work-src="${photo.large || photo.medium || photo.thumb || ''}" alt="" draggable="false" loading="lazy" crossorigin="anonymous" />
         </div>
       `,
     )
@@ -702,10 +728,6 @@ function renderShell() {
         <div class="empty-gallery-copy">
           <p>ARCHIVE READY</p>
           <h1>WAITING<br />FOR FIRST ALBUM</h1>
-        </div>
-        <div class="empty-gallery-actions">
-          <button type="button" data-action="studio-link">OPEN STUDIO</button>
-          <button type="button" data-action="setup-link">SETUP</button>
         </div>
         <p class="empty-gallery-note">LOCAL STORAGE / CLOUD READY</p>
       </section>
@@ -918,14 +940,14 @@ function renderShell() {
           <section class="studio-admin" data-studio-admin hidden>
             <header class="studio-admin-head">
               <div>
-                <p class="kicker">Gallery Manager</p>
-                <h2>Archive</h2>
+                <p class="kicker">Gallery Studio</p>
+                <h2>相册管理</h2>
               </div>
               <div class="studio-admin-actions">
-                <button type="button" data-action="setup-link">Setup</button>
-                <button type="button" data-action="admin-refresh">Refresh</button>
-                <button type="button" data-action="admin-logout">Logout</button>
-                <button type="button" data-action="close-studio">Close</button>
+                <button type="button" data-action="setup-link">设置</button>
+                <button type="button" data-action="admin-refresh">刷新</button>
+                <button type="button" data-action="admin-logout">退出</button>
+                <button type="button" data-action="close-studio">关闭</button>
               </div>
             </header>
             <div data-studio-admin-body></div>
@@ -1096,7 +1118,7 @@ function setupPanelHtml() {
           <div class="setup-grid" data-setup-storage="r2">
             <label>
               <span>${escapeHtml(setupT('accountId'))}</span>
-              <input name="r2AccountId" autocomplete="off" />
+              <input name="r2AccountId" autocomplete="off" value="${escapeHtml(storage.accountId || '')}" />
             </label>
             <label>
               <span>${escapeHtml(setupT('accessKeyId'))}</span>
@@ -1108,11 +1130,11 @@ function setupPanelHtml() {
             </label>
             <label>
               <span>${escapeHtml(setupT('publicBucket'))}</span>
-              <input name="r2PublicBucket" autocomplete="off" />
+              <input name="r2PublicBucket" autocomplete="off" value="${escapeHtml(storage.publicBucket || '')}" />
             </label>
             <label>
               <span>${escapeHtml(setupT('privateBucket'))}</span>
-              <input name="r2PrivateBucket" autocomplete="off" />
+              <input name="r2PrivateBucket" autocomplete="off" value="${escapeHtml(storage.privateBucket || '')}" />
             </label>
             <label>
               <span>${escapeHtml(setupT('publicBaseUrl'))}</span>
@@ -1328,6 +1350,14 @@ function attachEvents() {
   window.addEventListener('popstate', () => {
     applyRouteState({ fromPop: true });
   });
+
+  document.addEventListener('pointerdown', (event: any) => {
+    const routeLink = event.target.closest('[data-direct-route]');
+    if (!routeLink) return;
+    const href = routeLink.getAttribute('href') || routeLink.dataset.directRoute;
+    if (!href) return;
+    if (event.button === undefined || event.button === 0) window.location.href = href;
+  }, true);
 
   app.addEventListener('click', (event: any) => {
     const action = event.target.closest('[data-action]');
@@ -2048,75 +2078,149 @@ function renderStudioAdmin() {
   const photos = state.adminGallery.photos || [];
   const groupOptions = groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
   const groupCards = groups.map((group) => `
-    <form class="studio-group-form studio-admin-row" data-group-id="${escapeHtml(group.id)}">
-      <input name="title" value="${escapeHtml(group.title)}" aria-label="Group title" />
-      <input name="slug" value="${escapeHtml(group.slug)}" aria-label="Group slug" />
-      <input name="sortOrder" type="number" value="${Number(group.sortOrder) || 0}" aria-label="Group order" />
-      <select name="visibility" aria-label="Group visibility">
-        <option value="public" ${group.visibility === 'public' ? 'selected' : ''}>Public</option>
-        <option value="hidden" ${group.visibility === 'hidden' ? 'selected' : ''}>Hidden</option>
-      </select>
-      <textarea name="description" rows="2" aria-label="Group description">${escapeHtml(group.description || '')}</textarea>
-      <button type="submit">Save</button>
-      <button type="button" data-admin-delete-group="${escapeHtml(group.id)}">Delete</button>
+    <form class="studio-group-form studio-admin-row studio-group-card" data-group-id="${escapeHtml(group.id)}">
+      <label class="studio-field">
+        <span>相册名称</span>
+        <input name="title" value="${escapeHtml(group.title)}" aria-label="相册名称" />
+      </label>
+      <label class="studio-field">
+        <span>路径 Slug</span>
+        <input name="slug" value="${escapeHtml(group.slug)}" aria-label="路径 Slug" />
+      </label>
+      <label class="studio-field studio-field-small">
+        <span>排序</span>
+        <input name="sortOrder" type="number" value="${Number(group.sortOrder) || 0}" aria-label="排序" />
+      </label>
+      <label class="studio-field">
+        <span>可见性</span>
+        <select name="visibility" aria-label="可见性">
+          <option value="public" ${group.visibility === 'public' ? 'selected' : ''}>公开</option>
+          <option value="hidden" ${group.visibility === 'hidden' ? 'selected' : ''}>隐藏</option>
+        </select>
+      </label>
+      <label class="studio-field studio-wide">
+        <span>相册介绍</span>
+        <textarea name="description" rows="2" aria-label="相册介绍">${escapeHtml(group.description || '')}</textarea>
+      </label>
+      <div class="studio-row-actions">
+        <button type="submit">保存</button>
+        <button type="button" data-admin-delete-group="${escapeHtml(group.id)}">删除</button>
+      </div>
     </form>
   `).join('');
   const photoCards = photos.map((photo) => `
     <form class="studio-photo-form studio-photo-card" data-photo-id="${escapeHtml(photo.id)}">
       <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
-      <input name="title" value="${escapeHtml(photo.title)}" aria-label="Photo title" />
-      <textarea name="description" rows="3" aria-label="Photo description">${escapeHtml(photo.description || '')}</textarea>
-      <select name="groupId" aria-label="Photo group">
-        ${groups.map((group) => `<option value="${escapeHtml(group.id)}" ${photo.groupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')}
-      </select>
-      <input name="capturedAt" type="date" value="${escapeHtml(String(photo.capturedAt || '').slice(0, 10))}" aria-label="Captured date" />
-      <input name="sortOrder" type="number" value="${Number(photo.sortOrder) || photo.index || 0}" aria-label="Photo order" />
-      <select name="status" aria-label="Photo status">
-        <option value="active" ${photo.status === 'active' ? 'selected' : ''}>Active</option>
-        <option value="hidden" ${photo.status === 'hidden' ? 'selected' : ''}>Hidden</option>
-      </select>
+      <label class="studio-field">
+        <span>标题</span>
+        <input name="title" value="${escapeHtml(photo.title)}" aria-label="标题" />
+      </label>
+      <label class="studio-field">
+        <span>介绍</span>
+        <textarea name="description" rows="3" aria-label="介绍">${escapeHtml(photo.description || '')}</textarea>
+      </label>
+      <label class="studio-field">
+        <span>相册</span>
+        <select name="groupId" aria-label="相册">
+          ${groups.map((group) => `<option value="${escapeHtml(group.id)}" ${photo.groupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')}
+        </select>
+      </label>
+      <div class="studio-card-grid">
+        <label class="studio-field">
+          <span>拍摄日期</span>
+          <input name="capturedAt" type="date" value="${escapeHtml(String(photo.capturedAt || '').slice(0, 10))}" aria-label="拍摄日期" />
+        </label>
+        <label class="studio-field">
+          <span>排序</span>
+          <input name="sortOrder" type="number" value="${Number(photo.sortOrder) || photo.index || 0}" aria-label="排序" />
+        </label>
+        <label class="studio-field">
+          <span>状态</span>
+          <select name="status" aria-label="状态">
+            <option value="active" ${photo.status === 'active' ? 'selected' : ''}>显示</option>
+            <option value="hidden" ${photo.status === 'hidden' ? 'selected' : ''}>隐藏</option>
+          </select>
+        </label>
+      </div>
       <div class="studio-card-actions">
-        <button type="submit">Save</button>
-        <button type="button" data-admin-reprocess-photo="${escapeHtml(photo.id)}">Reprocess</button>
-        <button type="button" data-admin-delete-photo="${escapeHtml(photo.id)}">Delete</button>
+        <button type="submit">保存</button>
+        <button type="button" data-admin-reprocess-photo="${escapeHtml(photo.id)}">重建缩略图</button>
+        <button type="button" data-admin-delete-photo="${escapeHtml(photo.id)}">删除</button>
       </div>
     </form>
   `).join('');
 
   galleryEls.studioAdminBody.innerHTML = `
     <div class="studio-admin-grid">
-      <section>
-        <h3>Groups</h3>
-        <form class="studio-group-form studio-admin-row">
-          <input name="title" placeholder="New group" required />
-          <input name="slug" placeholder="slug" />
-          <input name="sortOrder" type="number" value="${groups.length}" />
-          <select name="visibility">
-            <option value="public">Public</option>
-            <option value="hidden">Hidden</option>
-          </select>
-          <textarea name="description" rows="2" placeholder="Description"></textarea>
-          <button type="submit">Create</button>
+      <section class="studio-section">
+        <h3>相册分组</h3>
+        <form class="studio-group-form studio-admin-row studio-create-group">
+          <label class="studio-field">
+            <span>新相册名称</span>
+            <input name="title" placeholder="例如：生日、旅行、日常" required />
+          </label>
+          <label class="studio-field">
+            <span>路径 Slug</span>
+            <input name="slug" placeholder="可留空自动生成" />
+          </label>
+          <label class="studio-field studio-field-small">
+            <span>排序</span>
+            <input name="sortOrder" type="number" value="${groups.length}" />
+          </label>
+          <label class="studio-field">
+            <span>可见性</span>
+            <select name="visibility">
+              <option value="public">公开</option>
+              <option value="hidden">隐藏</option>
+            </select>
+          </label>
+          <label class="studio-field studio-wide">
+            <span>相册介绍</span>
+            <textarea name="description" rows="2" placeholder="写给这个相册的一句话"></textarea>
+          </label>
+          <div class="studio-row-actions">
+            <button type="submit">创建相册</button>
+          </div>
         </form>
-        <div class="studio-list">${groupCards || '<p>No groups yet.</p>'}</div>
+        <div class="studio-list">${groupCards || '<p class="studio-empty">还没有相册。</p>'}</div>
       </section>
-      <section>
-        <h3>Upload</h3>
-        <form class="studio-upload-form studio-admin-row">
-          <select name="groupId" required>${groupOptions}</select>
-          <input name="title" placeholder="Title for single upload" />
-          <input name="titlePrefix" placeholder="Batch prefix" value="Gallery" />
-          <input name="capturedAt" type="date" />
-          <textarea name="description" rows="2" placeholder="Description"></textarea>
-          <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required />
-          <em class="studio-file-count" data-studio-file-count>0 FILES</em>
-          <button type="submit">Upload</button>
+      <section class="studio-section">
+        <h3>上传照片</h3>
+        <form class="studio-upload-form studio-admin-row studio-upload-row">
+          <label class="studio-field">
+            <span>目标相册</span>
+            <select name="groupId" required>${groupOptions}</select>
+          </label>
+          <label class="studio-field">
+            <span>单张标题</span>
+            <input name="title" placeholder="只上传一张时使用" />
+          </label>
+          <label class="studio-field">
+            <span>批量前缀</span>
+            <input name="titlePrefix" placeholder="批量上传时使用" value="Gallery" />
+          </label>
+          <label class="studio-field">
+            <span>拍摄日期</span>
+            <input name="capturedAt" type="date" />
+          </label>
+          <label class="studio-field studio-wide">
+            <span>图片介绍</span>
+            <textarea name="description" rows="2" placeholder="可选，会写入本次上传的照片"></textarea>
+          </label>
+          <label class="studio-field studio-file-field">
+            <span>选择照片</span>
+            <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required />
+          </label>
+          <em class="studio-file-count" data-studio-file-count>未选择文件</em>
+          <div class="studio-row-actions">
+            <button type="submit">上传照片</button>
+          </div>
         </form>
       </section>
     </div>
     <section class="studio-photo-section">
-      <h3>Photos</h3>
-      <div class="studio-photo-grid">${photoCards || '<p>No photos yet.</p>'}</div>
+      <h3>照片列表</h3>
+      <div class="studio-photo-grid">${photoCards || '<p class="studio-empty">当前还没有照片。</p>'}</div>
     </section>
   `;
 }
@@ -2137,7 +2241,7 @@ function updateStudioFileCount(form: any) {
   const count = files.length;
   const totalSize = [...files].reduce((sum, file) => sum + file.size, 0);
   const sizeLabel = totalSize > 0 ? ` / ${formatBytes(totalSize)}` : '';
-  target.textContent = `${count} ${count === 1 ? 'FILE' : 'FILES'}${sizeLabel}`;
+  target.textContent = count ? `${count} 张照片${sizeLabel}` : '未选择文件';
 }
 
 function formatBytes(bytes) {
@@ -2774,6 +2878,8 @@ function updateUi() {
   state.surfaceRgbTarget = (usesProjectPalette ? palette.surface : BASE_SURFACE_RGB).slice();
   state.textRgbTarget = (usesProjectPalette ? palette.text : BASE_TEXT_RGB).slice();
   state.workRgbTarget = (state.mode === VIEW.work ? palette.work : BASE_WORK_RGB).slice();
+  document.body.dataset.galleryEmpty = state.photos.length ? 'false' : 'true';
+  document.body.dataset.galleryMode = state.mode;
 
   if (galleryEls.title) galleryEls.title.textContent = photo?.title || '念念';
   if (galleryEls.current) galleryEls.current.textContent = current;
@@ -3902,6 +4008,7 @@ function requestWorkThumbImageLoad(index, motion, delay = 0) {
   const token = String((Number(image.dataset.loadToken) || 0) + 1);
   image.dataset.loadToken = token;
   const preload = new Image();
+  preload.crossOrigin = 'anonymous';
   const reveal = () => {
     if (image.dataset.loadToken !== token) return;
     image.style.backgroundImage = `url("${src}")`;

@@ -10,6 +10,8 @@ import {
   slugify,
 } from '../server/galleryUtils.js';
 import { buildPhotoDerivatives } from '../server/photoPipeline.js';
+import { publicSetupStatus } from '../server/runtimeConfig.js';
+import { missingR2ConfigFields, resolveR2Config, verifyLocalStorageConfig, verifyR2StorageConfig } from '../server/storage.js';
 
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'gallery-core-'));
 
@@ -66,8 +68,114 @@ try {
   assert.equal(processed.assets.find((asset) => asset.kind === 'large')?.width, 2200);
   assert.ok(processed.photo.blurDataUrl.startsWith('data:image/webp;base64,'));
 
-  console.log(JSON.stringify({ ok: true, tests: 8 }, null, 2));
+  const localProbe = await verifyLocalStorageConfig({
+    kind: 'local',
+    mediaDir: path.join(tempRoot, 'media'),
+    originalDir: path.join(tempRoot, 'originals'),
+  });
+  assert.equal(localProbe.ok, true);
+  assert.equal(localProbe.kind, 'local');
+  await assert.rejects(
+    () => verifyLocalStorageConfig({
+      kind: 'local',
+      mediaDir: path.join(tempRoot, 'public-media'),
+      originalDir: path.join(tempRoot, 'public-media', 'originals'),
+    }),
+    /outside the public media folder/,
+  );
+  await assert.rejects(
+    () => verifyLocalStorageConfig({
+      kind: 'local',
+      mediaDir: path.join(tempRoot, 'media-safe'),
+      originalDir: path.join(tempRoot, 'public', 'originals'),
+    }, { publicDir: path.join(tempRoot, 'public') }),
+    /must not be inside the public directory/,
+  );
+
+  const r2 = resolveR2Config({
+    kind: 'r2',
+    r2: {
+      accountId: 'account',
+      accessKeyId: 'access',
+      secretAccessKey: 'secret',
+      publicBucket: 'public',
+      privateBucket: 'private',
+      publicBaseUrl: 'https://cdn.example.com///',
+    },
+  });
+  assert.equal(r2.publicBaseUrl, 'https://cdn.example.com');
+  await assert.rejects(
+    () => verifyR2StorageConfig({
+      kind: 'r2',
+      r2: {
+        accountId: 'account',
+        accessKeyId: 'access',
+        secretAccessKey: 'secret',
+        publicBucket: 'same-bucket',
+        privateBucket: 'same-bucket',
+        publicBaseUrl: 'https://cdn.example.com',
+      },
+    }, { verifyPublicUrl: false }),
+    /must be different/,
+  );
+  const previousR2Env = saveEnv([
+    'R2_ACCOUNT_ID',
+    'R2_ACCESS_KEY_ID',
+    'R2_SECRET_ACCESS_KEY',
+    'R2_PUBLIC_BUCKET',
+    'R2_PRIVATE_BUCKET',
+    'R2_PUBLIC_BASE_URL',
+  ]);
+  try {
+    for (const key of Object.keys(previousR2Env)) delete process.env[key];
+    assert.deepEqual(missingR2ConfigFields({ kind: 'r2', r2: { accountId: 'account' } }), [
+      'accessKeyId',
+      'secretAccessKey',
+      'publicBucket',
+      'privateBucket',
+      'publicBaseUrl',
+    ]);
+  } finally {
+    restoreEnv(previousR2Env);
+  }
+
+  const previousAdminHash = process.env.GALLERY_ADMIN_PASSWORD_HASH;
+  delete process.env.GALLERY_ADMIN_PASSWORD_HASH;
+  try {
+    const setupStatus = publicSetupStatus({
+      configPath: path.join(tempRoot, 'config.json'),
+      config: {
+        setupComplete: true,
+        database: { kind: 'json', manifestPath: path.join(tempRoot, 'photos.json') },
+        storage: { kind: 'local', mediaDir: path.join(tempRoot, 'media'), originalDir: path.join(tempRoot, 'originals') },
+        auth: {},
+      },
+    });
+    assert.equal(setupStatus.configured, false);
+    assert.equal(setupStatus.auth.hasAdminPassword, false);
+  } finally {
+    if (previousAdminHash === undefined) {
+      delete process.env.GALLERY_ADMIN_PASSWORD_HASH;
+    } else {
+      process.env.GALLERY_ADMIN_PASSWORD_HASH = previousAdminHash;
+    }
+  }
+
+  console.log(JSON.stringify({ ok: true, tests: 18 }, null, 2));
 } finally {
   await rm(tempRoot, { force: true, recursive: true }).catch(() => {});
 }
 
+function saveEnv(keys): Record<string, string | undefined> {
+  return Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+}
+
+function restoreEnv(values: Record<string, string | undefined>) {
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}

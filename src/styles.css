@@ -82,6 +82,49 @@ a {
   pointer-events: none;
 }
 
+.empty-direct-actions {
+  position: fixed;
+  right: 50px;
+  bottom: 50px;
+  z-index: 2147483647;
+  display: flex;
+  gap: 12px;
+  color: var(--ink);
+  opacity: 0;
+  pointer-events: none;
+  text-transform: uppercase;
+  visibility: hidden;
+  transition:
+    opacity 360ms ease,
+    visibility 360ms ease;
+}
+
+body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.empty-direct-actions a {
+  display: inline-grid;
+  place-items: center;
+  min-width: 118px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(var(--text-rgb), 0.72);
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.empty-direct-actions a:first-child {
+  background: rgb(var(--text-rgb));
+  color: var(--black);
+}
+
 .gallery-shell {
   position: relative;
   width: 100%;
@@ -516,6 +559,7 @@ a {
 
 .empty-gallery {
   inset: 0;
+  z-index: 4;
   display: grid;
   grid-template:
     "mark copy" 1fr
@@ -583,32 +627,6 @@ a {
   letter-spacing: 0;
   transform: scaleX(0.78);
   transform-origin: left center;
-}
-
-.empty-gallery-actions {
-  grid-area: actions;
-  justify-self: end;
-  display: flex;
-  gap: 12px;
-}
-
-.empty-gallery-actions button {
-  min-width: 118px;
-  height: 44px;
-  padding: 0 16px;
-  border: 1px solid rgba(var(--text-rgb), 0.72);
-  background: transparent;
-  color: currentColor;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.empty-gallery-actions button:first-child {
-  background: rgb(var(--text-rgb));
-  color: var(--black);
 }
 
 .empty-gallery-note {
@@ -2247,6 +2265,7 @@ a {
   opacity: 0;
   overflow: auto;
   pointer-events: none;
+  visibility: hidden;
   transition: opacity 360ms ease;
 }
 
@@ -2261,6 +2280,7 @@ a {
   opacity: 0;
   overflow: auto;
   pointer-events: none;
+  visibility: hidden;
   transition: opacity 360ms ease;
 }
 
@@ -2268,6 +2288,7 @@ a {
 .gallery-shell.is-studio .studio-panel {
   opacity: 1;
   pointer-events: auto;
+  visibility: visible;
 }
 
 .setup-form {
@@ -2469,7 +2490,7 @@ a {
 
 .studio-shell {
   display: grid;
-  width: min(1180px, 100%);
+  width: min(1260px, 100%);
   gap: 12px;
   margin: auto 0;
   padding: 24px 0;
@@ -2491,11 +2512,11 @@ a {
 
 .studio-admin {
   display: grid;
-  gap: 18px;
+  gap: 20px;
   width: 100%;
   max-height: calc(100vh - 84px);
   overflow: auto;
-  padding: clamp(18px, 3vw, 30px);
+  padding: clamp(20px, 3vw, 32px);
   border: 1px solid rgba(236, 235, 227, 0.2);
   background: rgba(14, 14, 13, 0.94);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
@@ -2510,18 +2531,19 @@ a {
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(236, 235, 227, 0.12);
 }
 
 .studio-admin-head h2 {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--gold);
-  font-family: var(--font-condensed);
-  font-size: clamp(46px, 7vw, 82px);
-  line-height: 0.82;
-  text-transform: uppercase;
-  transform: scaleX(0.72);
-  transform-origin: left center;
+  font-family: var(--font-sans);
+  font-size: clamp(28px, 3.1vw, 42px);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0;
 }
 
 .studio-admin-actions,
@@ -2534,52 +2556,93 @@ a {
 
 .studio-admin-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
-  gap: 18px;
+  grid-template-columns: minmax(340px, 0.95fr) minmax(420px, 1.05fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.studio-section {
+  display: grid;
+  gap: 10px;
 }
 
 .studio-admin h3,
 .studio-photo-section h3 {
-  margin: 0 0 10px;
-  color: var(--muted);
-  font-size: 11px;
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
   letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .studio-list {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .studio-admin-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
-  gap: 8px;
-  margin-bottom: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 0;
+  padding: 12px;
+  border: 1px solid rgba(236, 235, 227, 0.14);
+  background: rgba(255, 255, 255, 0.025);
 }
 
-.studio-admin-row textarea {
+.studio-wide,
+.studio-row-actions {
   grid-column: 1 / -1;
+}
+
+.studio-field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.studio-field > span {
+  color: rgba(var(--text-rgb), 0.58);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.studio-field-small {
+  max-width: 120px;
+}
+
+.studio-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.studio-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .studio-photo-section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+  padding-top: 2px;
 }
 
 .studio-photo-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
 }
 
 .studio-photo-card {
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  padding: 12px;
   border: 1px solid rgba(236, 235, 227, 0.16);
-  background: rgba(255, 255, 255, 0.035);
+  background: rgba(255, 255, 255, 0.026);
 }
 
 .studio-photo-card img {
@@ -2600,12 +2663,11 @@ a {
 .studio-form h2 {
   margin: 4px 0 0;
   color: var(--gold);
-  font-family: var(--font-condensed);
-  font-size: clamp(58px, 12vw, 100px);
-  line-height: 0.82;
-  text-transform: uppercase;
-  transform: scaleX(0.72);
-  transform-origin: left center;
+  font-family: var(--font-sans);
+  font-size: clamp(28px, 7vw, 44px);
+  font-weight: 700;
+  line-height: 1.04;
+  letter-spacing: 0;
 }
 
 .studio-form label {
@@ -2621,13 +2683,15 @@ a {
 .studio-admin select,
 .studio-admin textarea {
   width: 100%;
-  min-height: 44px;
+  min-height: 42px;
   border: 1px solid rgba(236, 235, 227, 0.2);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.04);
   color: var(--ink);
-  padding: 10px 12px;
+  padding: 9px 11px;
   font: inherit;
+  font-weight: 500;
+  line-height: 1.25;
 }
 
 .studio-admin textarea {
@@ -2637,14 +2701,15 @@ a {
 
 .studio-file-count {
   display: block;
-  min-height: 12px;
+  align-self: end;
+  min-height: 42px;
+  padding: 14px 0 0;
   color: rgba(236, 235, 227, 0.46);
-  font-family: var(--font-condensed);
-  font-size: 12px;
+  font-family: var(--font-sans);
+  font-size: 11px;
   font-style: normal;
-  font-weight: 800;
-  line-height: 12px;
-  text-transform: uppercase;
+  font-weight: 700;
+  line-height: 1.1;
 }
 
 .studio-actions {
@@ -2655,21 +2720,45 @@ a {
 
 .studio-form button,
 .studio-admin button {
-  min-height: 46px;
+  min-height: 42px;
   border: 1px solid var(--gold);
   background: var(--gold);
   color: #14110b;
   cursor: pointer;
-  font-weight: 800;
-  text-transform: uppercase;
-  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 0 16px;
 }
 
 .studio-form button[type="button"],
 .studio-admin button[type="button"] {
-  min-width: 92px;
+  min-width: 74px;
   background: transparent;
   color: var(--gold);
+}
+
+.studio-admin input[type="file"] {
+  padding: 7px;
+}
+
+.studio-admin input[type="file"]::file-selector-button {
+  min-height: 28px;
+  margin-right: 10px;
+  border: 0;
+  background: rgba(var(--text-rgb), 0.22);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-empty {
+  margin: 0;
+  color: rgba(var(--text-rgb), 0.56);
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .studio-form input:disabled,
@@ -2693,8 +2782,13 @@ a {
 
 @media (max-width: 780px) {
   .studio-admin-grid,
-  .studio-admin-row {
+  .studio-admin-row,
+  .studio-card-grid {
     grid-template-columns: 1fr;
+  }
+
+  .studio-field-small {
+    max-width: none;
   }
 
   .studio-admin-head {
