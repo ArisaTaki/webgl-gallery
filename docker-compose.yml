@@ -41,7 +41,7 @@ services:
     profiles:
       - tunnel
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
       gallery:
         condition: service_healthy
