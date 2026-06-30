@@ -9,6 +9,7 @@ const root = path.resolve(new URL('..', import.meta.url).pathname);
 const archivePath = path.join(tempRoot, 'webgl-gallery.tar.gz');
 const installDir = path.join(tempRoot, 'installed');
 const r2InstallDir = path.join(tempRoot, 'installed-r2');
+const configR2InstallDir = path.join(tempRoot, 'installed-config-r2');
 
 try {
   await run('tar', [
@@ -106,6 +107,53 @@ try {
   if (!legacyR2Env.includes('WEBGL_GALLERY_STORAGE_MODE=r2')) throw new Error('Installer update did not infer legacy R2 storage mode.');
   if (!legacyR2Env.includes('R2_ACCOUNT_ID=account-id')) throw new Error('Installer update cleared legacy R2 config.');
 
+  await run('sh', [path.join(root, 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...process.env,
+      WEBGL_GALLERY_DIR: configR2InstallDir,
+      WEBGL_GALLERY_INSTALL_MODE: 'node',
+      WEBGL_GALLERY_SKIP_INSTALL: '1',
+      WEBGL_GALLERY_SKIP_SETUP: '1',
+      WEBGL_GALLERY_SKIP_START: '1',
+      WEBGL_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
+    },
+  });
+  await mkdir(path.join(configR2InstallDir, '.gallery'), { recursive: true });
+  await writeFile(path.join(configR2InstallDir, '.gallery', 'config.json'), `${JSON.stringify({
+    version: 1,
+    setupComplete: true,
+    storage: {
+      kind: 'r2',
+      r2: {
+        accountId: 'config-account-id',
+        accessKeyId: 'config-access-key-id',
+        secretAccessKey: 'config-secret-access-key',
+        publicBucket: 'config-public-bucket',
+        privateBucket: 'config-private-bucket',
+        publicBaseUrl: 'https://config-media.example.com',
+      },
+    },
+  }, null, 2)}\n`);
+  await writeFile(path.join(configR2InstallDir, '.env'), 'WEBGL_GALLERY_STORAGE_MODE=local\nCLOUDFLARE_TUNNEL_TOKEN=config-token\n');
+  const configR2Update = await run('sh', [path.join(root, 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...process.env,
+      WEBGL_GALLERY_ACTION: 'update',
+      WEBGL_GALLERY_DIR: configR2InstallDir,
+      WEBGL_GALLERY_INSTALL_MODE: 'node',
+      WEBGL_GALLERY_SKIP_INSTALL: '1',
+      WEBGL_GALLERY_SKIP_SETUP: '1',
+      WEBGL_GALLERY_SKIP_START: '1',
+      WEBGL_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
+    },
+  });
+  const configR2Env = await readFile(path.join(configR2InstallDir, '.env'), 'utf8');
+  if (!configR2Env.includes('WEBGL_GALLERY_STORAGE_MODE=r2')) throw new Error('Installer update did not infer R2 from existing app config.');
+  if (!configR2Env.includes('CLOUDFLARE_TUNNEL_TOKEN=config-token')) throw new Error('Installer update did not preserve tunnel token with app-config R2.');
+  if (configR2Env.includes('R2_ACCOUNT_ID=')) throw new Error('Installer should not duplicate existing app-config R2 secrets into .env.');
+
   await mkdir(path.join(installDir, '.gallery'), { recursive: true });
   await writeFile(path.join(installDir, '.gallery', 'config.json'), '{"setupComplete":true}\n');
   await writeFile(path.join(installDir, '.env'), 'WEBGL_GALLERY_IMAGE_MODE=prebuilt\nCLOUDFLARE_TUNNEL_TOKEN=test-token\n');
@@ -138,6 +186,7 @@ try {
     output: install.stdout.split('\n').filter(Boolean).slice(-8),
     r2Output: r2Install.stdout.split('\n').filter(Boolean).slice(-8),
     legacyR2UpdateOutput: legacyR2Update.stdout.split('\n').filter(Boolean).slice(-8),
+    configR2UpdateOutput: configR2Update.stdout.split('\n').filter(Boolean).slice(-8),
     updateOutput: update.stdout.split('\n').filter(Boolean).slice(-8),
   }, null, 2));
 } finally {

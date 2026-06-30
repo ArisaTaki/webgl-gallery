@@ -108,7 +108,7 @@ CLOUDFLARE_TUNNEL_TOKEN="..." \
 sh install.sh
 ```
 
-如果服务器已经部署过，可以用更新模式刷新代码并重启 Docker。`.env`、`.gallery` 和 `.uploads` 会保留：
+如果服务器已经部署过，可以用更新模式刷新代码并重启 Docker。`.env`、`.gallery` 和 `.uploads` 会保留；更新时脚本会优先读取 `.gallery/config.json` 里的 `storage.kind`，已有 R2 配置不需要再把 R2 密钥复制到 `.env`：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ArisaTaki/webgl-gallery/main/install.sh | \

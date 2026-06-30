@@ -244,6 +244,10 @@ prompt_storage_mode() {
 
 configure_storage_profile() {
   had_env="$1"
+  config_storage_mode="$(existing_config_storage_mode || true)"
+  if [ -z "${WEBGL_GALLERY_STORAGE_MODE:-}" ] && [ -n "$config_storage_mode" ]; then
+    STORAGE_MODE="$config_storage_mode"
+  fi
   if [ -z "$STORAGE_MODE" ] && r2_env_configured; then
     STORAGE_MODE="r2"
   fi
@@ -278,6 +282,9 @@ clear_r2_env() {
 
 configure_r2_env() {
   had_env="$1"
+  if ! r2_env_configured && [ "$(existing_config_storage_mode || true)" = "r2" ]; then
+    return 0
+  fi
   configure_required_env R2_ACCOUNT_ID "Cloudflare Account ID" plain "$had_env"
   configure_required_env R2_ACCESS_KEY_ID "R2 Access Key ID" secret "$had_env"
   configure_required_env R2_SECRET_ACCESS_KEY "R2 Secret Access Key" secret "$had_env"
@@ -312,6 +319,31 @@ r2_env_configured() {
     [ -n "$value" ] || return 1
   done
   return 0
+}
+
+existing_config_storage_mode() {
+  for config_file in .gallery/config.json "${GALLERY_CONFIG_PATH:-}" "${GALLERY_CONFIG_DIR:+$GALLERY_CONFIG_DIR/config.json}"; do
+    [ -n "$config_file" ] && [ -f "$config_file" ] || continue
+    storage_kind="$(
+      awk '
+        /"storage"[[:space:]]*:/ { in_storage = 1 }
+        in_storage && /"kind"[[:space:]]*:[[:space:]]*"(local|r2)"/ {
+          line = $0
+          sub(/^.*"kind"[[:space:]]*:[[:space:]]*"/, "", line)
+          sub(/".*$/, "", line)
+          print line
+          exit
+        }
+      ' "$config_file"
+    )"
+    case "$storage_kind" in
+      local|r2)
+        printf '%s\n' "$storage_kind"
+        return 0
+        ;;
+    esac
+  done
+  return 1
 }
 
 configure_tunnel_profile() {
