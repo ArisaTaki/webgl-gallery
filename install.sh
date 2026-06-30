@@ -8,10 +8,11 @@ DEFAULT_PORT="${WEBGL_GALLERY_DEFAULT_PORT:-5280}"
 INSTALL_DIR="${WEBGL_GALLERY_DIR:-$HOME/$APP_NAME}"
 INSTALL_MODE="${WEBGL_GALLERY_INSTALL_MODE:-docker}"
 ACTION="${WEBGL_GALLERY_ACTION:-install}"
+PURGE="${WEBGL_GALLERY_PURGE:-0}"
 SOURCE_URL="${WEBGL_GALLERY_SOURCE_URL:-${WEBGL_GALLERY_SOURCE:-}}"
 REPO_URL="${WEBGL_GALLERY_REPO_URL:-${WEBGL_GALLERY_REPO:-}}"
 BRANCH="${WEBGL_GALLERY_BRANCH:-main}"
-HOSTNAME="${WEBGL_GALLERY_HOSTNAME:-gallery.irop.one}"
+HOSTNAME="${WEBGL_GALLERY_HOSTNAME:-}"
 IMAGE_MODE="${WEBGL_GALLERY_IMAGE_MODE:-prebuilt}"
 STORAGE_MODE="${WEBGL_GALLERY_STORAGE_MODE:-}"
 
@@ -30,6 +31,13 @@ fail() {
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || fail "$1 is required. Please install it and run this command again."
+}
+
+is_truthy() {
+  case "$1" in
+    1|true|TRUE|yes|YES|y|Y) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 is_project_dir() {
@@ -398,17 +406,23 @@ start_docker() {
   if has_tunnel_token; then
     docker compose --profile tunnel up -d --build
     log ""
-    log "WebGL Gallery is starting at https://$HOSTNAME"
+    if [ -n "$HOSTNAME" ]; then
+      log "WebGL Gallery is starting at https://$HOSTNAME"
+    else
+      log "WebGL Gallery is starting through Cloudflare Tunnel."
+    fi
   else
     docker compose up -d --build
     log ""
     log "WebGL Gallery is starting at http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}"
-    log "To expose $HOSTNAME, set CLOUDFLARE_TUNNEL_TOKEN in .env and run:"
+    log "To expose it with Cloudflare Tunnel, set CLOUDFLARE_TUNNEL_TOKEN in .env and run:"
     log "  docker compose --profile tunnel up -d"
   fi
   wait_for_gallery
-  if has_tunnel_token; then
+  if has_tunnel_token && [ -n "$HOSTNAME" ]; then
     log "Public URL: https://$HOSTNAME"
+  elif has_tunnel_token; then
+    log "Public URL: use the public hostname configured in Cloudflare Zero Trust."
   fi
   log "Setup page: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/setup"
   log "Studio: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/studio"
@@ -422,17 +436,23 @@ start_docker_prebuilt() {
   if has_tunnel_token; then
     docker compose -f docker-compose.image.yml --profile tunnel up -d
     log ""
-    log "WebGL Gallery is starting at https://$HOSTNAME"
+    if [ -n "$HOSTNAME" ]; then
+      log "WebGL Gallery is starting at https://$HOSTNAME"
+    else
+      log "WebGL Gallery is starting through Cloudflare Tunnel."
+    fi
   else
     docker compose -f docker-compose.image.yml up -d
     log ""
     log "WebGL Gallery is starting at http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}"
-    log "To expose $HOSTNAME, set CLOUDFLARE_TUNNEL_TOKEN in .env and run:"
+    log "To expose it with Cloudflare Tunnel, set CLOUDFLARE_TUNNEL_TOKEN in .env and run:"
     log "  docker compose -f docker-compose.image.yml --profile tunnel up -d"
   fi
   wait_for_gallery
-  if has_tunnel_token; then
+  if has_tunnel_token && [ -n "$HOSTNAME" ]; then
     log "Public URL: https://$HOSTNAME"
+  elif has_tunnel_token; then
+    log "Public URL: use the public hostname configured in Cloudflare Zero Trust."
   fi
   log "Setup page: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/setup"
   log "Studio: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/studio"
@@ -463,10 +483,58 @@ start_node() {
   node scripts/bootstrap.mjs
 }
 
+uninstall_app() {
+  if [ -n "${WEBGL_GALLERY_DIR:-}" ]; then
+    if ! is_project_dir "$INSTALL_DIR"; then
+      fail "No existing install found at $INSTALL_DIR."
+    fi
+  elif is_project_dir "$(pwd)"; then
+    INSTALL_DIR="$(pwd)"
+  elif ! is_project_dir "$INSTALL_DIR"; then
+    fail "No existing install found at $INSTALL_DIR."
+  fi
+
+  log "Uninstalling $APP_NAME from $INSTALL_DIR"
+  cd "$INSTALL_DIR"
+
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    if [ -f docker-compose.image.yml ]; then
+      docker compose -f docker-compose.image.yml --profile tunnel down --remove-orphans || true
+    fi
+    if [ -f docker-compose.yml ]; then
+      docker compose --profile tunnel down --remove-orphans || true
+    fi
+  else
+    log "Docker Compose is not available; skipping container removal."
+  fi
+
+  if is_truthy "$PURGE"; then
+    case "$INSTALL_DIR" in
+      ""|"/"|"$HOME"|"$HOME/"|"."|"..")
+        fail "Refusing to purge unsafe install directory: $INSTALL_DIR"
+        ;;
+    esac
+    parent_dir="$(dirname "$INSTALL_DIR")"
+    base_dir="$(basename "$INSTALL_DIR")"
+    cd "$parent_dir"
+    rm -rf "$base_dir"
+    log "Removed install directory: $INSTALL_DIR"
+  else
+    log "Containers removed. Files are preserved at $INSTALL_DIR"
+    log "Preserved data includes .env, .gallery, .uploads, public/media, and public/data."
+    log "To delete the install directory too, rerun uninstall with WEBGL_GALLERY_PURGE=1."
+  fi
+}
+
 case "$ACTION" in
-  install|update) ;;
-  *) fail "Unknown WEBGL_GALLERY_ACTION: $ACTION. Use install or update." ;;
+  install|update|uninstall) ;;
+  *) fail "Unknown WEBGL_GALLERY_ACTION: $ACTION. Use install, update, or uninstall." ;;
 esac
+
+if [ "$ACTION" = "uninstall" ]; then
+  uninstall_app
+  exit 0
+fi
 
 if [ "$ACTION" = "update" ]; then
   if [ -n "$SOURCE_URL" ]; then

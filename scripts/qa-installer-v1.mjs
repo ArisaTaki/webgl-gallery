@@ -182,6 +182,31 @@ try {
   if (!preservedEnv.includes('CLOUDFLARE_TUNNEL_TOKEN=test-token')) throw new Error('Installer update did not preserve .env.');
   if (!preservedConfig.includes('"setupComplete":true')) throw new Error('Installer update did not preserve .gallery config.');
 
+  const uninstall = await run('sh', [path.join(root, 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...process.env,
+      WEBGL_GALLERY_ACTION: 'uninstall',
+      WEBGL_GALLERY_DIR: installDir,
+    },
+  });
+  await access(path.join(installDir, '.env'));
+  await access(path.join(installDir, '.gallery', 'config.json'));
+  if (!uninstall.stdout.includes('Containers removed. Files are preserved')) {
+    throw new Error('Installer uninstall did not preserve files by default.');
+  }
+
+  const purge = await run('sh', [path.join(root, 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...process.env,
+      WEBGL_GALLERY_ACTION: 'uninstall',
+      WEBGL_GALLERY_DIR: installDir,
+      WEBGL_GALLERY_PURGE: '1',
+    },
+  });
+  if (await pathExists(installDir)) throw new Error('Installer purge uninstall did not remove install directory.');
+
   console.log(JSON.stringify({
     ok: true,
     installDir,
@@ -191,10 +216,21 @@ try {
     legacyR2UpdateOutput: legacyR2Update.stdout.split('\n').filter(Boolean).slice(-8),
     configR2UpdateOutput: configR2Update.stdout.split('\n').filter(Boolean).slice(-8),
     updateOutput: update.stdout.split('\n').filter(Boolean).slice(-8),
+    uninstallOutput: uninstall.stdout.split('\n').filter(Boolean).slice(-8),
+    purgeOutput: purge.stdout.split('\n').filter(Boolean).slice(-8),
   }, null, 2));
 } finally {
   if (!process.env.KEEP_INSTALLER_QA_TMP) {
     await rm(tempRoot, { force: true, recursive: true }).catch(() => {});
+  }
+}
+
+async function pathExists(target) {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
   }
 }
 

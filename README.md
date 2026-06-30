@@ -57,6 +57,14 @@ curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/i
   CLOUDFLARE_TUNNEL_TOKEN="..." sh
 ```
 
+如果想让安装完成后的输出里显示公网地址，可以同时传入你自己的域名：
+
+```bash
+curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
+  CLOUDFLARE_TUNNEL_TOKEN="..." \
+  WEBGL_GALLERY_HOSTNAME="gallery.example.com" sh
+```
+
 高级用法才需要传参数，例如指定安装目录、改端口、改为服务器本地 build，或从 Git 仓库安装：
 
 ```bash
@@ -87,7 +95,7 @@ docker compose -f docker-compose.image.yml up -d
 
 如果仍想让安装器在终端里询问 Local/R2，可以设置 `WEBGL_GALLERY_INTERACTIVE=1`。
 
-如果输入 `CLOUDFLARE_TUNNEL_TOKEN`，脚本还会同时启动 `cloudflared` 容器，把 `gallery.irop.one` 转发到应用容器；不输入 token 时只启动应用容器。
+如果输入 `CLOUDFLARE_TUNNEL_TOKEN`，脚本还会同时启动 `cloudflared` 容器；不输入 token 时只启动应用容器。公开域名由 Cloudflare Zero Trust 里的 Public hostname 配置决定，`WEBGL_GALLERY_HOSTNAME` 只用于安装器输出提示。
 
 无人值守部署可以直接用环境变量明确存储方式：
 
@@ -116,6 +124,21 @@ curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/i
   WEBGL_GALLERY_ACTION=update sh
 ```
 
+卸载会停止并移除 Docker 容器，但默认保留安装目录和数据：
+
+```bash
+curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
+  WEBGL_GALLERY_ACTION=uninstall sh
+```
+
+如果确认要连同安装目录一起删除，再显式加 `WEBGL_GALLERY_PURGE=1`：
+
+```bash
+curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
+  WEBGL_GALLERY_ACTION=uninstall \
+  WEBGL_GALLERY_PURGE=1 sh
+```
+
 GitHub `main` 分支有新 push 时，Release workflow 会跑完整校验并刷新 GHCR 的 `latest`、`main` 和 `sha-*` 镜像标签；推送 `v*` tag 时仍然会生成正式 GitHub Release 和安装包附件。
 
 如果需要走 Node 本地模式，可以设置：
@@ -130,12 +153,12 @@ WEBGL_GALLERY_INSTALL_MODE=node sh install.sh
 npm run doctor
 ```
 
-### irop.one 域名
+### Cloudflare Tunnel 域名
 
-推荐把画廊页面放在 `gallery.irop.one`，继续让 `media.irop.one` 专门服务 R2 图片。Docker Compose 已经内置可选的 Cloudflare Tunnel 服务：
+如果要把画廊放到自己的公网域名，推荐让画廊页面使用一个独立子域名，例如 `gallery.example.com`；如果同时使用 R2 公开图片域名，可以继续让图片走另一个子域名，例如 `media.example.com`。Docker Compose 已经内置可选的 Cloudflare Tunnel 服务：
 
 1. 在 Cloudflare Zero Trust 里创建一个 Cloudflared tunnel
-2. Public hostname 指向 `gallery.irop.one`
+2. Public hostname 指向你的画廊域名，例如 `gallery.example.com`
 3. Service 填 `http://gallery:5279`
 4. 把 tunnel token 写入 `.env` 的 `CLOUDFLARE_TUNNEL_TOKEN`
 5. 启动 tunnel profile：
