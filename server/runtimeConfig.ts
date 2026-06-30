@@ -131,7 +131,7 @@ function normalizeSetupInput({ input, currentConfig, paths, configDir }) {
   const adminPasswordHash = adminPassword
     ? createPasswordHash(adminPassword)
     : currentConfig.auth?.adminPasswordHash || process.env.GALLERY_ADMIN_PASSWORD_HASH || '';
-  const sessionSecret = String(body.sessionSecret || currentConfig.auth?.sessionSecret || process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'));
+  const sessionSecret = String(currentConfig.auth?.sessionSecret || process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'));
   return {
     version: 1,
     setupComplete: true,

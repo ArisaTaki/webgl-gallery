@@ -59,6 +59,7 @@ try {
     databaseKind: 'sqlite',
     mediaDir,
     originalDir,
+    sessionSecret: 'user-supplied-session-secret',
     sqlitePath,
     storageKind: 'local',
   });
@@ -95,6 +96,9 @@ try {
   if (!Array.isArray(photos)) failures.push('/api/photos should stay a flat array after setup.');
   if (config.database?.kind !== 'sqlite' || config.storage?.kind !== 'local' || !config.auth?.adminPasswordHash) {
     failures.push(`Expected config file to persist local sqlite setup, got ${JSON.stringify(config)}.`);
+  }
+  if (!config.auth?.sessionSecret || config.auth.sessionSecret === 'user-supplied-session-secret') {
+    failures.push(`Expected setup to auto-manage the session secret, got ${JSON.stringify(config.auth)}.`);
   }
 
   const report = {

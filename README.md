@@ -202,7 +202,7 @@ http://localhost:5280/studio
 npm run dev
 ```
 
-没有配置管理员密码 hash 时，开发环境会临时沿用 `GALLERY_UPLOAD_KEY`，默认是 `13209`。生产环境建议在 `/setup` 里设置后台密码，或者设置 `GALLERY_ADMIN_PASSWORD_HASH` 和 `SESSION_SECRET`：
+没有配置管理员密码 hash 时，开发环境会临时沿用 `GALLERY_UPLOAD_KEY`，默认是 `13209`。生产环境建议在 `/setup` 里设置后台密码。`SESSION_SECRET` 通常会自动生成并保存在配置文件里，只有需要固定多实例会话签名时才手动设置：
 
 ```bash
 npx tsx -e "import { createPasswordHash } from './server/auth.ts'; console.log(createPasswordHash('your-password'))"
