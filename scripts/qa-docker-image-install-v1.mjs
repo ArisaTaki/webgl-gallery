@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -75,6 +75,47 @@ try {
     failures.push(`Expected portable local storage paths in container, got ${JSON.stringify(status.storage)}.`);
   }
 
+  const uninstall = await run('sh', [path.join(root, 'dist', 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...env,
+      WEBGL_GALLERY_ACTION: 'uninstall',
+    },
+    timeoutMs: 120000,
+  });
+  const containersAfterUninstall = await composeContainers(composeProject);
+  const networksAfterUninstall = await composeNetworks(composeProject);
+  if (containersAfterUninstall.trim()) {
+    failures.push(`Expected uninstall to remove containers, got ${containersAfterUninstall.trim()}.`);
+  }
+  if (networksAfterUninstall.trim()) {
+    failures.push(`Expected uninstall to remove networks, got ${networksAfterUninstall.trim()}.`);
+  }
+  if (!(await pathExists(installDir))) {
+    failures.push('Expected uninstall without purge to preserve install directory.');
+  }
+
+  const purge = await run('sh', [path.join(root, 'dist', 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...env,
+      WEBGL_GALLERY_ACTION: 'uninstall',
+      WEBGL_GALLERY_PURGE: '1',
+    },
+    timeoutMs: 120000,
+  });
+  const containersAfterPurge = await composeContainers(composeProject);
+  const networksAfterPurge = await composeNetworks(composeProject);
+  if (containersAfterPurge.trim()) {
+    failures.push(`Expected purge uninstall to remove containers, got ${containersAfterPurge.trim()}.`);
+  }
+  if (networksAfterPurge.trim()) {
+    failures.push(`Expected purge uninstall to remove networks, got ${networksAfterPurge.trim()}.`);
+  }
+  if (await pathExists(installDir)) {
+    failures.push('Expected purge uninstall to remove install directory.');
+  }
+
   const report = {
     ok: failures.length === 0,
     installDir,
@@ -89,6 +130,8 @@ try {
       storage: status.storage,
     },
     installOutput: installLines.slice(-10),
+    uninstallOutput: uninstall.stdout.split('\n').filter(Boolean).slice(-10),
+    purgeOutput: purge.stdout.split('\n').filter(Boolean).slice(-10),
     failures,
   };
   console.log(JSON.stringify(report, null, 2));
@@ -128,6 +171,39 @@ async function waitForStatus(baseUrl) {
     env,
   }).catch((error) => ({ stdout: '', stderr: String(error) }));
   throw new Error(`Timed out waiting for prebuilt-image install. Last error: ${lastError?.message || lastError}\n${logs.stdout}\n${logs.stderr}`);
+}
+
+async function composeContainers(project) {
+  const result = await run('docker', [
+    'ps',
+    '-a',
+    '--filter',
+    `label=com.docker.compose.project=${project}`,
+    '--format',
+    '{{.Names}}',
+  ], { timeoutMs: 120000 });
+  return result.stdout;
+}
+
+async function composeNetworks(project) {
+  const result = await run('docker', [
+    'network',
+    'ls',
+    '--filter',
+    `label=com.docker.compose.project=${project}`,
+    '--format',
+    '{{.Name}}',
+  ], { timeoutMs: 120000 });
+  return result.stdout;
+}
+
+async function pathExists(target) {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function run(command, args, options = {}) {

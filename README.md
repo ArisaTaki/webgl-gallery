@@ -124,7 +124,7 @@ curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/i
   WEBGL_GALLERY_ACTION=update sh
 ```
 
-卸载会停止并移除 Docker 容器，但默认保留安装目录和数据：
+卸载会停止并移除 Docker 容器和 network，但默认保留安装目录和数据：
 
 ```bash
 curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
@@ -138,6 +138,8 @@ curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/i
   WEBGL_GALLERY_ACTION=uninstall \
   WEBGL_GALLERY_PURGE=1 sh
 ```
+
+`WEBGL_GALLERY_PURGE=1` 会清理容器、Docker network 和安装目录。Docker 镜像缓存默认保留，方便之后重装；如需同时清镜像，可以手动执行 `docker image rm ghcr.io/arisataki/webgl-gallery:latest`。
 
 GitHub `main` 分支有新 push 时，Release workflow 会跑完整校验并刷新 GHCR 的 `latest`、`main` 和 `sha-*` 镜像标签；推送 `v*` tag 时仍然会生成正式 GitHub Release 和安装包附件。
 

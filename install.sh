@@ -156,6 +156,10 @@ has_tunnel_token() {
   [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ] || [ -n "$(env_value CLOUDFLARE_TUNNEL_TOKEN)" ]
 }
 
+docker_compose_available() {
+  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+}
+
 set_env() {
   key="$1"
   value="$2"
@@ -378,7 +382,7 @@ configure_tunnel_profile() {
 
 start_docker() {
   need_cmd docker
-  docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required. Please update Docker Desktop or Docker Engine."
+  docker_compose_available || fail "Docker Compose v2 is required. Please update Docker Desktop or Docker Engine."
   prepare_env
   case "$IMAGE_MODE" in
     prebuilt|build) ;;
@@ -483,29 +487,74 @@ start_node() {
   node scripts/bootstrap.mjs
 }
 
+remove_docker_stack() {
+  project="$1"
+  remove_volumes="$2"
+  if ! command -v docker >/dev/null 2>&1; then
+    log "Docker is not available; skipping container removal."
+    return 0
+  fi
+
+  down_args="down --remove-orphans"
+  if is_truthy "$remove_volumes"; then
+    down_args="down --volumes --remove-orphans"
+  fi
+  if docker compose version >/dev/null 2>&1; then
+    if [ -f docker-compose.image.yml ]; then
+      docker compose -f docker-compose.image.yml --profile tunnel $down_args || true
+    fi
+    if [ -f docker-compose.yml ]; then
+      docker compose --profile tunnel $down_args || true
+    fi
+  else
+    log "Docker Compose is not available; falling back to Docker container cleanup."
+  fi
+
+  container_ids="$(docker ps -aq --filter "label=com.docker.compose.project=$project" 2>/dev/null || true)"
+  if [ -n "$container_ids" ]; then
+    docker rm -f $container_ids >/dev/null 2>&1 || true
+  fi
+
+  for container_name in \
+    "$project-gallery-1" \
+    "$project-cloudflared-1" \
+    "${project}_gallery_1" \
+    "${project}_cloudflared_1"; do
+    docker rm -f "$container_name" >/dev/null 2>&1 || true
+  done
+
+  network_ids="$(docker network ls -q --filter "label=com.docker.compose.project=$project" 2>/dev/null || true)"
+  if [ -n "$network_ids" ]; then
+    docker network rm $network_ids >/dev/null 2>&1 || true
+  fi
+  docker network rm "${project}_default" >/dev/null 2>&1 || true
+}
+
 uninstall_app() {
+  found_install_dir=1
   if [ -n "${WEBGL_GALLERY_DIR:-}" ]; then
     if ! is_project_dir "$INSTALL_DIR"; then
-      fail "No existing install found at $INSTALL_DIR."
+      found_install_dir=0
     fi
   elif is_project_dir "$(pwd)"; then
     INSTALL_DIR="$(pwd)"
-  elif ! is_project_dir "$INSTALL_DIR"; then
-    fail "No existing install found at $INSTALL_DIR."
+  elif is_project_dir "$INSTALL_DIR"; then
+    found_install_dir=1
+  else
+    found_install_dir=0
   fi
 
   log "Uninstalling $APP_NAME from $INSTALL_DIR"
-  cd "$INSTALL_DIR"
-
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-    if [ -f docker-compose.image.yml ]; then
-      docker compose -f docker-compose.image.yml --profile tunnel down --remove-orphans || true
-    fi
-    if [ -f docker-compose.yml ]; then
-      docker compose --profile tunnel down --remove-orphans || true
-    fi
+  if [ "$found_install_dir" = "1" ]; then
+    cd "$INSTALL_DIR"
+    WEBGL_GALLERY_COMPOSE_PROJECT="${WEBGL_GALLERY_COMPOSE_PROJECT:-$(env_value WEBGL_GALLERY_COMPOSE_PROJECT webgl-gallery)}"
   else
-    log "Docker Compose is not available; skipping container removal."
+    WEBGL_GALLERY_COMPOSE_PROJECT="${WEBGL_GALLERY_COMPOSE_PROJECT:-webgl-gallery}"
+  fi
+  if is_truthy "$PURGE"; then
+    remove_docker_stack "$WEBGL_GALLERY_COMPOSE_PROJECT" 1
+  else
+    remove_docker_stack "$WEBGL_GALLERY_COMPOSE_PROJECT" 0
   fi
 
   if is_truthy "$PURGE"; then
@@ -514,12 +563,20 @@ uninstall_app() {
         fail "Refusing to purge unsafe install directory: $INSTALL_DIR"
         ;;
     esac
-    parent_dir="$(dirname "$INSTALL_DIR")"
-    base_dir="$(basename "$INSTALL_DIR")"
-    cd "$parent_dir"
-    rm -rf "$base_dir"
-    log "Removed install directory: $INSTALL_DIR"
+    if [ -e "$INSTALL_DIR" ]; then
+      parent_dir="$(dirname "$INSTALL_DIR")"
+      base_dir="$(basename "$INSTALL_DIR")"
+      cd "$parent_dir"
+      rm -rf "$base_dir"
+      log "Removed install directory: $INSTALL_DIR"
+    else
+      log "Install directory was already absent: $INSTALL_DIR"
+    fi
+    log "Containers and Docker networks for project $WEBGL_GALLERY_COMPOSE_PROJECT were removed."
   else
+    if [ "$found_install_dir" != "1" ]; then
+      log "No install directory found at $INSTALL_DIR."
+    fi
     log "Containers removed. Files are preserved at $INSTALL_DIR"
     log "Preserved data includes .env, .gallery, .uploads, public/media, and public/data."
     log "To delete the install directory too, rerun uninstall with WEBGL_GALLERY_PURGE=1."
