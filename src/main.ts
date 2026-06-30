@@ -181,6 +181,7 @@ const state = {
   adminGallery: { groups: [], photos: [] },
   adminLoading: false,
   adminStatus: '',
+  studioActiveGroupId: 'all',
   curveLatency: 0,
   currentGroupSlug: '',
   detailEntryStartedAt: 0,
@@ -1410,9 +1411,15 @@ function attachEvents() {
     const deletePhoto = event.target.closest('[data-admin-delete-photo]');
     const reprocessPhoto = event.target.closest('[data-admin-reprocess-photo]');
     const deleteGroup = event.target.closest('[data-admin-delete-group]');
+    const groupFilter = event.target.closest('[data-studio-group-filter]');
     const setupLanguageButton = event.target.closest('[data-setup-language]');
     const thumb = event.target.closest('[data-index]');
 
+    if (groupFilter) {
+      state.studioActiveGroupId = groupFilter.dataset.studioGroupFilter || 'all';
+      renderStudioAdmin();
+      return;
+    }
     if (setupLanguageButton) {
       state.setupLanguage = setupLanguageButton.dataset.setupLanguage === 'en' ? 'en' : 'zh';
       localStorage.setItem('gallery_setup_language', state.setupLanguage);
@@ -2040,11 +2047,12 @@ async function onAdminGroupSave(event: any, form) {
   const payload = formJson(form);
   setStudioStatus(id ? 'Saving group...' : 'Creating group...');
   try {
-    await adminFetch(id ? `/api/admin/groups/${encodeURIComponent(id)}` : '/api/admin/groups', {
+    const result = await adminFetch(id ? `/api/admin/groups/${encodeURIComponent(id)}` : '/api/admin/groups', {
       method: id ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+    if (result.group?.id) state.studioActiveGroupId = result.group.id;
     await loadAdminGallery();
   } catch (error: any) {
     setStudioStatus(error.message);
@@ -2056,6 +2064,7 @@ async function onAdminDeleteGroup(id) {
   setStudioStatus('Deleting group...');
   try {
     await adminFetch(`/api/admin/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (state.studioActiveGroupId === id) state.studioActiveGroupId = 'all';
     await loadAdminGallery();
   } catch (error: any) {
     setStudioStatus(error.message);
@@ -2171,9 +2180,39 @@ function renderStudioAdmin() {
   }
   const groups = state.adminGallery.groups || [];
   const photos = state.adminGallery.photos || [];
-  const groupOptions = groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('');
-  const groupCards = groups.map((group) => `
-    <form class="studio-group-form studio-admin-row studio-group-card" data-group-id="${escapeHtml(group.id)}">
+  const photoCountByGroup = photos.reduce((map, photo) => {
+    map.set(photo.groupId, (map.get(photo.groupId) || 0) + 1);
+    return map;
+  }, new Map());
+  const hiddenPhotoCount = photos.filter((photo) => photo.status === 'hidden').length;
+  const selectedGroupExists = groups.some((group) => group.id === state.studioActiveGroupId);
+  const activeGroupId = selectedGroupExists ? state.studioActiveGroupId : 'all';
+  state.studioActiveGroupId = activeGroupId;
+  const activeGroup = groups.find((group) => group.id === activeGroupId);
+  const visiblePhotos = activeGroupId === 'all'
+    ? photos
+    : photos.filter((photo) => photo.groupId === activeGroupId);
+  const groupOptions = groups.length
+    ? groups.map((group) => `<option value="${escapeHtml(group.id)}" ${activeGroupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')
+    : '<option value="">先创建相册</option>';
+  const albumButtons = [
+    `<button type="button" data-studio-group-filter="all" class="${activeGroupId === 'all' ? 'is-active' : ''}">
+      <span>全部照片</span>
+      <b>${photos.length}</b>
+    </button>`,
+    ...groups.map((group) => `
+      <button type="button" data-studio-group-filter="${escapeHtml(group.id)}" class="${activeGroupId === group.id ? 'is-active' : ''}">
+        <span>${escapeHtml(group.title)}</span>
+        <b>${photoCountByGroup.get(group.id) || 0}</b>
+      </button>
+    `),
+  ].join('');
+  const inspectorGroups = (activeGroup ? [activeGroup] : groups).map((group) => `
+    <form class="studio-group-form studio-group-card" data-group-id="${escapeHtml(group.id)}">
+      <div class="studio-card-heading">
+        <strong>${escapeHtml(group.title)}</strong>
+        <span>${photoCountByGroup.get(group.id) || 0} 张</span>
+      </div>
       <label class="studio-field">
         <span>相册名称</span>
         <input name="title" value="${escapeHtml(group.title)}" aria-label="相册名称" />
@@ -2182,34 +2221,42 @@ function renderStudioAdmin() {
         <span>路径 Slug</span>
         <input name="slug" value="${escapeHtml(group.slug)}" aria-label="路径 Slug" />
       </label>
-      <label class="studio-field studio-field-small">
-        <span>排序</span>
-        <input name="sortOrder" type="number" value="${Number(group.sortOrder) || 0}" aria-label="排序" />
-      </label>
+      <div class="studio-inline-fields">
+        <label class="studio-field">
+          <span>排序</span>
+          <input name="sortOrder" type="number" value="${Number(group.sortOrder) || 0}" aria-label="排序" />
+        </label>
+        <label class="studio-field">
+          <span>可见性</span>
+          <select name="visibility" aria-label="可见性">
+            <option value="public" ${group.visibility === 'public' ? 'selected' : ''}>公开</option>
+            <option value="hidden" ${group.visibility === 'hidden' ? 'selected' : ''}>隐藏</option>
+          </select>
+        </label>
+      </div>
       <label class="studio-field">
-        <span>可见性</span>
-        <select name="visibility" aria-label="可见性">
-          <option value="public" ${group.visibility === 'public' ? 'selected' : ''}>公开</option>
-          <option value="hidden" ${group.visibility === 'hidden' ? 'selected' : ''}>隐藏</option>
-        </select>
-      </label>
-      <label class="studio-field studio-wide">
         <span>相册介绍</span>
-        <textarea name="description" rows="2" aria-label="相册介绍">${escapeHtml(group.description || '')}</textarea>
+        <textarea name="description" rows="3" aria-label="相册介绍">${escapeHtml(group.description || '')}</textarea>
       </label>
       <div class="studio-row-actions">
-        <button type="submit">保存</button>
+        <button type="submit">保存相册</button>
         <button type="button" data-admin-delete-group="${escapeHtml(group.id)}">删除</button>
       </div>
     </form>
   `).join('');
-  const photoCards = photos.map((photo) => {
+  const photoCards = visiblePhotos.map((photo) => {
     const reprocessButton = photo.canReprocess
       ? `<button type="button" data-admin-reprocess-photo="${escapeHtml(photo.id)}">重建缩略图</button>`
       : '';
     return `
     <form class="studio-photo-form studio-photo-card" data-photo-id="${escapeHtml(photo.id)}">
-      <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
+      <div class="studio-photo-preview">
+        <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
+        <div class="studio-photo-badges">
+          <span>${photo.status === 'hidden' ? '隐藏' : '显示'}</span>
+          <span>${escapeHtml(photo.group || 'default')}</span>
+        </div>
+      </div>
       <label class="studio-field">
         <span>标题</span>
         <input name="title" value="${escapeHtml(photo.title)}" aria-label="标题" />
@@ -2224,7 +2271,7 @@ function renderStudioAdmin() {
           ${groups.map((group) => `<option value="${escapeHtml(group.id)}" ${photo.groupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')}
         </select>
       </label>
-      <div class="studio-card-grid">
+      <div class="studio-inline-fields">
         <label class="studio-field">
           <span>拍摄日期</span>
           <input name="capturedAt" type="date" value="${escapeHtml(String(photo.capturedAt || '').slice(0, 10))}" aria-label="拍摄日期" />
@@ -2249,79 +2296,129 @@ function renderStudioAdmin() {
     </form>
   `;
   }).join('');
+  const activeTitle = activeGroup ? activeGroup.title : '全部照片';
+  const activeDescription = activeGroup
+    ? `${photoCountByGroup.get(activeGroup.id) || 0} 张照片 · ${activeGroup.visibility === 'hidden' ? '隐藏相册' : '公开相册'}`
+    : `${photos.length} 张照片 · ${groups.length} 个相册`;
 
   galleryEls.studioAdminBody.innerHTML = `
-    <div class="studio-admin-grid">
-      <section class="studio-section">
-        <h3>相册分组</h3>
-        <form class="studio-group-form studio-admin-row studio-create-group">
+    <div class="studio-dashboard">
+      <aside class="studio-sidebar">
+        <section class="studio-overview" aria-label="图库概览">
+          <div>
+            <b>${photos.length}</b>
+            <span>照片</span>
+          </div>
+          <div>
+            <b>${groups.length}</b>
+            <span>相册</span>
+          </div>
+          <div>
+            <b>${hiddenPhotoCount}</b>
+            <span>隐藏</span>
+          </div>
+        </section>
+        <nav class="studio-album-nav" aria-label="相册筛选">
+          ${albumButtons}
+        </nav>
+        <form class="studio-group-form studio-create-group">
+          <h3>新建相册</h3>
           <label class="studio-field">
-            <span>新相册名称</span>
-            <input name="title" placeholder="例如：生日、旅行、日常" required />
+            <span>名称</span>
+            <input name="title" placeholder="生日、旅行、日常" required />
           </label>
           <label class="studio-field">
-            <span>路径 Slug</span>
+            <span>Slug</span>
             <input name="slug" placeholder="可留空自动生成" />
           </label>
-          <label class="studio-field studio-field-small">
-            <span>排序</span>
-            <input name="sortOrder" type="number" value="${groups.length}" />
-          </label>
+          <div class="studio-inline-fields">
+            <label class="studio-field">
+              <span>排序</span>
+              <input name="sortOrder" type="number" value="${groups.length}" />
+            </label>
+            <label class="studio-field">
+              <span>可见性</span>
+              <select name="visibility">
+                <option value="public">公开</option>
+                <option value="hidden">隐藏</option>
+              </select>
+            </label>
+          </div>
           <label class="studio-field">
-            <span>可见性</span>
-            <select name="visibility">
-              <option value="public">公开</option>
-              <option value="hidden">隐藏</option>
-            </select>
-          </label>
-          <label class="studio-field studio-wide">
-            <span>相册介绍</span>
+            <span>介绍</span>
             <textarea name="description" rows="2" placeholder="写给这个相册的一句话"></textarea>
           </label>
-          <div class="studio-row-actions">
-            <button type="submit">创建相册</button>
-          </div>
+          <button type="submit">创建相册</button>
         </form>
-        <div class="studio-list">${groupCards || '<p class="studio-empty">还没有相册。</p>'}</div>
-      </section>
-      <section class="studio-section">
-        <h3>上传照片</h3>
-        <form class="studio-upload-form studio-admin-row studio-upload-row">
-          <label class="studio-field">
-            <span>目标相册</span>
-            <select name="groupId" required>${groupOptions}</select>
-          </label>
-          <label class="studio-field">
-            <span>单张标题</span>
-            <input name="title" placeholder="只上传一张时使用" />
-          </label>
-          <label class="studio-field">
-            <span>批量前缀</span>
-            <input name="titlePrefix" placeholder="批量上传时使用" value="Gallery" />
-          </label>
-          <label class="studio-field">
-            <span>拍摄日期</span>
-            <input name="capturedAt" type="date" />
-          </label>
-          <label class="studio-field studio-wide">
-            <span>图片介绍</span>
-            <textarea name="description" rows="2" placeholder="可选，会写入本次上传的照片"></textarea>
-          </label>
-          <label class="studio-field studio-file-field">
-            <span>选择照片</span>
-            <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required />
-          </label>
-          <em class="studio-file-count" data-studio-file-count>未选择文件</em>
-          <div class="studio-row-actions">
-            <button type="submit">上传照片</button>
+      </aside>
+
+      <main class="studio-workspace">
+        <section class="studio-workspace-head">
+          <div>
+            <p class="kicker">Library</p>
+            <h3>${escapeHtml(activeTitle)}</h3>
+            <span>${escapeHtml(activeDescription)}</span>
           </div>
-        </form>
-      </section>
+          <div class="studio-workspace-actions">
+            <button type="button" data-action="admin-refresh">刷新</button>
+          </div>
+        </section>
+
+        <section class="studio-upload-panel">
+          <div>
+            <h3>上传照片</h3>
+            <p>选择目标相册后批量上传，系统会生成公开展示用 WebP 图片。</p>
+          </div>
+          <form class="studio-upload-form studio-upload-row">
+            <label class="studio-field">
+              <span>目标相册</span>
+              <select name="groupId" required ${groups.length ? '' : 'disabled'}>${groupOptions}</select>
+            </label>
+            <label class="studio-field">
+              <span>单张标题</span>
+              <input name="title" placeholder="只上传一张时使用" />
+            </label>
+            <label class="studio-field">
+              <span>批量前缀</span>
+              <input name="titlePrefix" placeholder="批量上传时使用" value="Gallery" />
+            </label>
+            <label class="studio-field">
+              <span>拍摄日期</span>
+              <input name="capturedAt" type="date" />
+            </label>
+            <label class="studio-field studio-wide">
+              <span>图片介绍</span>
+              <textarea name="description" rows="2" placeholder="可选，会写入本次上传的照片"></textarea>
+            </label>
+            <label class="studio-field studio-file-field">
+              <span>选择照片</span>
+              <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required ${groups.length ? '' : 'disabled'} />
+            </label>
+            <em class="studio-file-count" data-studio-file-count>未选择文件</em>
+            <div class="studio-row-actions">
+              <button type="submit" ${groups.length ? '' : 'disabled'}>上传照片</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="studio-photo-section">
+          <div class="studio-section-head">
+            <div>
+              <h3>照片</h3>
+              <p>${visiblePhotos.length} 张正在当前视图中</p>
+            </div>
+          </div>
+          <div class="studio-photo-grid">${photoCards || '<p class="studio-empty">当前视图还没有照片。</p>'}</div>
+        </section>
+      </main>
+
+      <aside class="studio-inspector">
+        <section class="studio-section">
+          <h3>${activeGroup ? '当前相册设置' : '相册设置'}</h3>
+          <div class="studio-list">${inspectorGroups || '<p class="studio-empty">还没有相册。</p>'}</div>
+        </section>
+      </aside>
     </div>
-    <section class="studio-photo-section">
-      <h3>照片列表</h3>
-      <div class="studio-photo-grid">${photoCards || '<p class="studio-empty">当前还没有照片。</p>'}</div>
-    </section>
   `;
 }
 

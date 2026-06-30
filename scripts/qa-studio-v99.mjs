@@ -14,6 +14,8 @@ async function staticChecks() {
     ['studio route', main.includes('/studio')],
     ['secret key buffer', main.includes('state.keyBuffer =') && main.includes("endsWith('webgl')")],
     ['studio admin login', main.includes("fetch('/api/admin/login'")],
+    ['studio dashboard layout', main.includes('studio-dashboard') && main.includes('data-studio-group-filter')],
+    ['studio upload panel', main.includes('studio-upload-panel') && main.includes('studio-inspector')],
     ['upload key env', server.includes("process.env.GALLERY_UPLOAD_KEY || '13209'")],
     ['multer file limit', server.includes("upload.array('photos', 24)")],
     ['webp variants', pipeline.includes("{ key: 'thumb'") && pipeline.includes("{ key: 'large'")],
