@@ -8,7 +8,9 @@ import { pathToFileURL } from 'node:url';
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'gallery-docker-image-install-v1-'));
 const installDir = path.join(tempRoot, 'installed');
+const skipStartDir = path.join(tempRoot, 'skip-start');
 const composeProject = `webgl-gallery-image-install-qa-${process.pid}-${Date.now()}`.toLowerCase();
+const skipStartProject = `${composeProject}-skip`;
 const image = `${composeProject}:local`;
 const port = await getFreePort();
 const url = `http://127.0.0.1:${port}`;
@@ -25,6 +27,24 @@ const env = {
 try {
   await run('npm', ['run', 'package:release'], { timeoutMs: 120000 });
   await run('docker', ['build', '-t', image, '.'], { timeoutMs: 480000 });
+  const skipStart = await run('sh', [path.join(root, 'dist', 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...env,
+      WEBGL_GALLERY_DIR: skipStartDir,
+      WEBGL_GALLERY_COMPOSE_PROJECT: skipStartProject,
+      WEBGL_GALLERY_SKIP_START: '1',
+    },
+    timeoutMs: 120000,
+  });
+  const skippedContainers = await run('docker', [
+    'ps',
+    '-a',
+    '--filter',
+    `label=com.docker.compose.project=${skipStartProject}`,
+    '--format',
+    '{{.Names}}',
+  ], { timeoutMs: 120000 });
   const install = await run('sh', [path.join(root, 'dist', 'install.sh')], {
     cwd: tempRoot,
     env,
@@ -35,6 +55,12 @@ try {
   const installLines = install.stdout.split('\n').filter(Boolean);
   if (!installLines.some((line) => line.includes('Using prebuilt Docker image'))) {
     failures.push('Expected installer output to use prebuilt Docker image mode.');
+  }
+  if (!skipStart.stdout.includes('Skipping Docker start because WEBGL_GALLERY_SKIP_START=1.')) {
+    failures.push('Expected WEBGL_GALLERY_SKIP_START=1 to skip Docker startup.');
+  }
+  if (skippedContainers.stdout.trim()) {
+    failures.push(`Expected skip-start install to create no containers, got ${skippedContainers.stdout.trim()}.`);
   }
   if (status.ok !== true || status.configured !== false) {
     failures.push(`Expected first-run setup status from prebuilt-image install, got ${JSON.stringify(status)}.`);
@@ -55,6 +81,7 @@ try {
     composeProject,
     image,
     url,
+    skipStartOutput: skipStart.stdout.split('\n').filter(Boolean).slice(-6),
     status: {
       configured: status.configured,
       configPath: status.configPath,
@@ -70,6 +97,11 @@ try {
   await run('docker', ['compose', '-f', 'docker-compose.image.yml', 'down', '-v', '--remove-orphans'], {
     cwd: installDir,
     env,
+    timeoutMs: 120000,
+  }).catch(() => {});
+  await run('docker', ['compose', '-f', 'docker-compose.image.yml', 'down', '-v', '--remove-orphans'], {
+    cwd: skipStartDir,
+    env: { ...env, WEBGL_GALLERY_COMPOSE_PROJECT: skipStartProject },
     timeoutMs: 120000,
   }).catch(() => {});
   await run('docker', ['rmi', '-f', image], { timeoutMs: 120000 }).catch(() => {});

@@ -372,12 +372,28 @@ start_docker() {
   need_cmd docker
   docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required. Please update Docker Desktop or Docker Engine."
   prepare_env
+  case "$IMAGE_MODE" in
+    prebuilt|build) ;;
+    *) fail "Unknown WEBGL_GALLERY_IMAGE_MODE: $IMAGE_MODE. Use build or prebuilt." ;;
+  esac
+  if [ "${WEBGL_GALLERY_SKIP_START:-}" = "1" ]; then
+    log "Skipping Docker start because WEBGL_GALLERY_SKIP_START=1."
+    if [ "$IMAGE_MODE" = "prebuilt" ]; then
+      if has_tunnel_token; then
+        log "Start later with: docker compose -f docker-compose.image.yml --profile tunnel up -d"
+      else
+        log "Start later with: docker compose -f docker-compose.image.yml up -d"
+      fi
+    elif has_tunnel_token; then
+      log "Start later with: docker compose --profile tunnel up -d --build"
+    else
+      log "Start later with: docker compose up -d --build"
+    fi
+    return 0
+  fi
   if [ "$IMAGE_MODE" = "prebuilt" ]; then
     start_docker_prebuilt
     return 0
-  fi
-  if [ "$IMAGE_MODE" != "build" ]; then
-    fail "Unknown WEBGL_GALLERY_IMAGE_MODE: $IMAGE_MODE. Use build or prebuilt."
   fi
   if has_tunnel_token; then
     docker compose --profile tunnel up -d --build
