@@ -109,6 +109,8 @@ const SETUP_COPY = {
     setup: 'Setup',
     setupTitle: 'Configure gallery',
     setupFailed: 'Setup failed.',
+    setupLocked: 'Setup locked',
+    setupLockedHint: 'Log in as admin to change gallery setup.',
     setupSaved: 'Setup saved. Opening studio...',
     sqliteCheck: 'Local SQLite metadata',
     sqliteFile: 'SQLite file',
@@ -117,6 +119,7 @@ const SETUP_COPY = {
     storageLocalCheck: 'Local image storage',
     storageR2Check: 'Cloudflare R2 image storage',
     savingSetup: 'Saving setup...',
+    unlockSetup: 'Unlock setup',
   },
   zh: {
     accountId: '账户 ID',
@@ -158,6 +161,8 @@ const SETUP_COPY = {
     setup: '设置',
     setupTitle: '配置画廊',
     setupFailed: '设置失败。',
+    setupLocked: '设置已锁定',
+    setupLockedHint: '请先使用后台密码登录，才能修改画廊设置。',
     setupSaved: '设置已保存，正在打开后台...',
     sqliteCheck: '本地 SQLite 元数据',
     sqliteFile: 'SQLite 文件',
@@ -166,6 +171,7 @@ const SETUP_COPY = {
     storageLocalCheck: '本地图片存储',
     storageR2Check: 'Cloudflare R2 图片存储',
     savingSetup: '正在保存设置...',
+    unlockSetup: '解锁设置',
   },
 };
 
@@ -1028,7 +1034,12 @@ function setupCheckLabel(check) {
 }
 
 function setupMessageText() {
-  return state.setupMessage || (state.setupStatus?.configured ? setupT('configured') : setupT('chooseLocal'));
+  return state.setupMessage || defaultSetupMessage();
+}
+
+function defaultSetupMessage() {
+  if (state.setupStatus?.locked) return setupT('setupLockedHint');
+  return state.setupStatus?.configured ? setupT('configured') : setupT('chooseLocal');
 }
 
 function setupErrorMessage(message) {
@@ -1050,6 +1061,47 @@ function setupPanelHtml() {
       </span>
     `)
     .join('');
+  if (status.locked) {
+    return `
+      <section class="setup-panel" aria-label="Gallery setup" aria-hidden="${state.mode !== VIEW.setup}">
+        <form class="setup-login-form">
+          <header class="setup-head">
+            <div>
+              <p class="setup-brand">irop gallery</p>
+              <p class="kicker">${escapeHtml(setupT('setup'))}</p>
+              <h2>${escapeHtml(setupT('setupLocked'))}</h2>
+            </div>
+            <div class="setup-head-side">
+              <div class="setup-language" role="group" aria-label="${escapeHtml(setupT('language'))}">
+                <span>${escapeHtml(setupT('language'))}</span>
+                <button type="button" data-setup-language="zh" class="${state.setupLanguage === 'zh' ? 'is-active' : ''}">中文</button>
+                <button type="button" data-setup-language="en" class="${state.setupLanguage === 'en' ? 'is-active' : ''}">EN</button>
+              </div>
+              <div class="setup-checks">
+                ${checks || `<span class="setup-check is-ok"><i>${escapeHtml(setupT('ok'))}</i>${escapeHtml(setupT('configured'))}</span>`}
+              </div>
+            </div>
+          </header>
+
+          <section class="setup-section">
+            <h3>${escapeHtml(setupT('admin'))}</h3>
+            <p class="setup-note">${escapeHtml(setupT('setupLockedHint'))}</p>
+            <input name="username" type="hidden" autocomplete="username" value="gallery" />
+            <label>
+              <span>${escapeHtml(setupT('adminPassword'))}</span>
+              <input name="password" type="password" autocomplete="current-password" required />
+            </label>
+          </section>
+
+          <footer class="setup-actions">
+            <p data-setup-message>${escapeHtml(setupMessageText())}</p>
+            <button type="button" data-action="setup-refresh">${escapeHtml(setupT('refresh'))}</button>
+            <button type="submit">${escapeHtml(setupT('unlockSetup'))}</button>
+          </footer>
+        </form>
+      </section>
+    `;
+  }
   return `
     <section class="setup-panel" aria-label="Gallery setup" aria-hidden="${state.mode !== VIEW.setup}">
       <form class="setup-form">
@@ -1436,6 +1488,7 @@ function attachEvents() {
     }
     if (name === 'setup-link') {
       setMode(VIEW.setup);
+      refreshSetupStatus();
     }
     if (name === 'studio-link') {
       setMode(VIEW.studio);
@@ -1461,10 +1514,26 @@ function attachEvents() {
   app.addEventListener('submit', (event: any) => {
     const form = event.target?.closest?.('form');
     if (!form || !app.contains(form)) return;
-    if (form.matches('.setup-form')) onSetupSave(event, form);
-    if (form.matches('.studio-login-form')) onStudioLogin(event, form);
-    if (form.matches('.studio-upload-form')) onAdminPhotoUpload(event, form);
-    if (form.matches('.studio-group-form')) onAdminGroupSave(event, form);
+    if (form.matches('.setup-login-form')) {
+      onSetupLogin(event, form);
+      return;
+    }
+    if (form.matches('.setup-form')) {
+      onSetupSave(event, form);
+      return;
+    }
+    if (form.matches('.studio-login-form')) {
+      onStudioLogin(event, form);
+      return;
+    }
+    if (form.matches('.studio-upload-form')) {
+      onAdminPhotoUpload(event, form);
+      return;
+    }
+    if (form.matches('.studio-group-form')) {
+      onAdminGroupSave(event, form);
+      return;
+    }
     if (form.matches('.studio-photo-form')) onAdminPhotoSave(event, form);
   });
 
@@ -1821,9 +1890,41 @@ async function refreshSetupStatus() {
   state.setupMessage = setupT('checkingSetup');
   updateSetupMessage();
   state.setupStatus = await loadSetupStatus();
-  state.setupMessage = state.setupStatus.configured ? setupT('configured') : setupT('chooseLocal');
+  state.setupMessage = defaultSetupMessage();
   renderShell();
   updateUi();
+}
+
+async function onSetupLogin(event: any, form) {
+  event.preventDefault();
+  state.setupMessage = setupT('checkingSetup');
+  updateSetupMessage();
+  form.querySelectorAll('input, button').forEach((control) => {
+    control.disabled = true;
+  });
+  try {
+    const response = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: form.elements.password?.value || '' }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.message || 'Login failed.');
+    state.adminAuthenticated = true;
+    state.setupStatus = await loadSetupStatus();
+    state.setupMessage = defaultSetupMessage();
+    renderShell();
+    updateUi();
+  } catch (error: any) {
+    state.setupMessage = setupErrorMessage(error.message);
+    updateSetupMessage();
+  } finally {
+    if (form.isConnected) {
+      form.querySelectorAll('input, button').forEach((control) => {
+        control.disabled = false;
+      });
+    }
+  }
 }
 
 async function onSetupSave(event: any, form) {

@@ -45,8 +45,8 @@ app.use('/media', (request, response, next) => {
 });
 app.use('/data', express.static(dataDir, { maxAge: 0 }));
 
-app.get('/api/setup/status', (_request, response) => {
-  response.json(publicSetupStatus(runtime));
+app.get('/api/setup/status', (request, response) => {
+  response.json(setupStatusForRequest(request));
 });
 
 app.post('/api/setup/save', requireSetupAccess, async (request, response, next) => {
@@ -275,6 +275,35 @@ function publicMediaDir() {
   return runtime.config.storage?.kind === 'local' && runtime.config.storage.mediaDir
     ? runtime.config.storage.mediaDir
     : mediaDir;
+}
+
+function setupStatusForRequest(request) {
+  const status = publicSetupStatus(runtime);
+  if (!status.configured || isAdminRequest(request)) return status;
+  return {
+    ok: status.ok,
+    configured: true,
+    locked: true,
+    database: {
+      configured: status.database?.configured !== false,
+      issue: '',
+      kind: status.database?.kind || '',
+    },
+    storage: {
+      configured: status.storage?.configured !== false,
+      kind: status.storage?.kind || '',
+    },
+    auth: {
+      hasAdminPassword: status.auth?.hasAdminPassword !== false,
+      hasSessionSecret: status.auth?.hasSessionSecret !== false,
+    },
+    checks: (status.checks || []).map((check) => ({
+      key: check.key,
+      kind: check.kind,
+      label: check.label,
+      ok: check.ok,
+    })),
+  };
 }
 
 function requireSetupAccess(request, response, next) {

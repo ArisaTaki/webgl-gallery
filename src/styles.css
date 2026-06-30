@@ -2291,7 +2291,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   visibility: visible;
 }
 
-.setup-form {
+.setup-form,
+.setup-login-form {
   display: grid;
   width: min(1120px, 100%);
   max-height: calc(100vh - 44px);
@@ -2303,7 +2304,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.36);
 }
 
-.setup-form [hidden] {
+.setup-form [hidden],
+.setup-login-form [hidden] {
   display: none !important;
 }
 
@@ -2365,7 +2367,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   text-transform: uppercase;
 }
 
-.setup-form .setup-language button {
+.setup-form .setup-language button,
+.setup-login-form .setup-language button {
   min-height: 32px;
   border: 0;
   border-left: 1px solid rgba(236, 235, 227, 0.16);
@@ -2377,7 +2380,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   padding: 0;
 }
 
-.setup-form .setup-language button.is-active {
+.setup-form .setup-language button.is-active,
+.setup-login-form .setup-language button.is-active {
   background: rgba(var(--text-rgb), 0.12);
   color: var(--ink);
 }
@@ -2437,7 +2441,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   gap: 10px;
 }
 
-.setup-form label {
+.setup-form label,
+.setup-login-form label {
   display: grid;
   gap: 7px;
   color: var(--muted);
@@ -2446,7 +2451,9 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 }
 
 .setup-form input,
-.setup-form select {
+.setup-form select,
+.setup-login-form input,
+.setup-login-form select {
   width: 100%;
   min-height: 44px;
   border: 1px solid rgba(236, 235, 227, 0.2);
@@ -2472,7 +2479,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   font-size: 12px;
 }
 
-.setup-form button {
+.setup-form button,
+.setup-login-form button {
   min-height: 46px;
   border: 1px solid var(--gold);
   background: var(--gold);
@@ -2483,7 +2491,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   padding: 0 14px;
 }
 
-.setup-form button[type="button"] {
+.setup-form button[type="button"],
+.setup-login-form button[type="button"] {
   background: transparent;
   color: var(--gold);
 }

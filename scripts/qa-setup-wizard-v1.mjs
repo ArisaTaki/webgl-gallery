@@ -63,7 +63,9 @@ try {
     storageKind: 'local',
   });
   const after = await fetchJson('/api/setup/status');
-  const login = await postJson('/api/admin/login', { password: ADMIN_PASSWORD });
+  const blockedSave = await postJson('/api/setup/save', { storageKind: 'local' });
+  const login = await loginJson('/api/admin/login', { password: ADMIN_PASSWORD });
+  const unlockedStatus = await fetchJson('/api/setup/status', { Cookie: login.cookie });
   const photos = await fetchJson('/api/photos');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
   await access(sqlitePath);
@@ -75,11 +77,20 @@ try {
   if (saved.configured !== true || saved.database.kind !== 'sqlite' || saved.storage.kind !== 'local') {
     failures.push(`Expected saved local setup status, got ${JSON.stringify(saved)}.`);
   }
-  if (after.configured !== true || after.auth.hasAdminPassword !== true) {
-    failures.push(`Expected persisted configured status, got ${JSON.stringify(after)}.`);
+  if (after.configured !== true || after.locked !== true || after.auth.hasAdminPassword !== true) {
+    failures.push(`Expected persisted setup status to be locked for guests, got ${JSON.stringify(after)}.`);
+  }
+  if (after.storage?.mediaDir || after.storage?.originalDir || after.database?.sqlitePath) {
+    failures.push(`Expected locked setup status to redact local paths, got ${JSON.stringify(after)}.`);
+  }
+  if (blockedSave.status !== 401) {
+    failures.push(`Expected configured setup save to require admin login, got ${JSON.stringify(blockedSave)}.`);
   }
   if (login.status !== 200 || login.body?.authenticated !== true) {
     failures.push(`Expected new admin password to work, got ${JSON.stringify(login)}.`);
+  }
+  if (unlockedStatus.locked || unlockedStatus.storage?.mediaDir !== mediaDir || unlockedStatus.database?.sqlitePath !== sqlitePath) {
+    failures.push(`Expected admin setup status to include full config, got ${JSON.stringify(unlockedStatus)}.`);
   }
   if (!Array.isArray(photos)) failures.push('/api/photos should stay a flat array after setup.');
   if (config.database?.kind !== 'sqlite' || config.storage?.kind !== 'local' || !config.auth?.adminPasswordHash) {
@@ -97,6 +108,13 @@ try {
       database: saved.database,
       storage: saved.storage,
       auth: saved.auth,
+    },
+    after,
+    unlockedStatus: {
+      configured: unlockedStatus.configured,
+      locked: unlockedStatus.locked || false,
+      database: unlockedStatus.database,
+      storage: unlockedStatus.storage,
     },
     photos: photos.length,
     failures,
@@ -133,8 +151,8 @@ async function waitForServer(url) {
   throw new Error(`Timed out waiting for isolated server at ${url}.`);
 }
 
-async function fetchJson(pathname) {
-  const response = await fetch(`${serverUrl}${pathname}`);
+async function fetchJson(pathname, headers = {}) {
+  const response = await fetch(`${serverUrl}${pathname}`, { headers });
   return response.json();
 }
 
@@ -162,5 +180,18 @@ async function postJson(pathname, payload) {
     get auth() {
       return this.body?.auth;
     },
+  };
+}
+
+async function loginJson(pathname, payload) {
+  const response = await fetch(`${serverUrl}${pathname}`, {
+    body: JSON.stringify(payload),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+  return {
+    body: await response.json(),
+    cookie: response.headers.get('set-cookie')?.split(';')[0] || '',
+    status: response.status,
   };
 }
