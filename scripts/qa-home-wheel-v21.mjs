@@ -158,7 +158,7 @@ try {
   const homeAfter = await sample(client, 'home-wheel-after');
   await screenshot(client, '/tmp/local-home-wheel-v21-after.png');
 
-  await client.send('Page.navigate', { url: 'http://localhost:5279/nian-nian-002' });
+  await client.send('Page.navigate', { url: 'http://localhost:5279/webgl-gallery-002' });
   await waitForMode(client, 'detail');
   await sleep(900);
   const detailBefore = await sample(client, 'detail-before-tiny-wheel');
@@ -178,8 +178,8 @@ try {
   if (homeMid.mode !== 'index' || homeAfter.mode !== 'index') {
     failures.push(`Expected Home wheel to remain on index surface, got ${JSON.stringify({ homeMid, homeAfter })}.`);
   }
-  if (detailBefore.mode !== 'detail' || detailBefore.pathname !== '/nian-nian-002') {
-    failures.push(`Expected Detail before tiny wheel at /nian-nian-002, got ${JSON.stringify(detailBefore)}.`);
+  if (detailBefore.mode !== 'detail' || detailBefore.pathname !== '/webgl-gallery-002') {
+    failures.push(`Expected Detail before tiny wheel at /webgl-gallery-002, got ${JSON.stringify(detailBefore)}.`);
   }
   if (detailAfter.mode !== 'index' || detailAfter.pathname !== '/') {
     failures.push(`Expected any Detail wheel to modeOut to Home like reference class v.sXFn, got ${JSON.stringify(detailAfter)}.`);

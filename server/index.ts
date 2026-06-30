@@ -201,7 +201,7 @@ app.post('/api/upload', upload.array('photos', 24), async (request, response, ne
 
     const manifest = await galleryStore.addPhotos({
       files,
-      titlePrefix: request.body?.titlePrefix || '念念',
+      titlePrefix: request.body?.titlePrefix || 'Gallery',
     });
     response.json({ ok: true, count: manifest.count, photos: manifest.photos });
   } catch (error) {
@@ -248,7 +248,7 @@ app.use((error, _request, response, _next) => {
 });
 
 app.listen(port, () => {
-  console.log(`Nian gallery is running at http://localhost:${port}`);
+  console.log(`WebGL Gallery is running at http://localhost:${port}`);
   console.log(`First-run setup: http://localhost:${port}/setup`);
   console.log(`Hidden upload room: http://localhost:${port}/studio`);
 });

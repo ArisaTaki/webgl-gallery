@@ -1,8 +1,8 @@
-name: ${NIAN_GALLERY_COMPOSE_PROJECT:-nian-gallery}
+name: ${WEBGL_GALLERY_COMPOSE_PROJECT:-webgl-gallery}
 
 services:
   gallery:
-    image: ${NIAN_GALLERY_IMAGE:-ghcr.io/arisataki/webgl-gallery:latest}
+    image: ${WEBGL_GALLERY_IMAGE:-ghcr.io/arisataki/webgl-gallery:latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -21,7 +21,7 @@ services:
       R2_PRIVATE_BUCKET: ${R2_PRIVATE_BUCKET:-}
       R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
     ports:
-      - "${NIAN_GALLERY_PORT:-5279}:5279"
+      - "${WEBGL_GALLERY_PORT:-5279}:5279"
     volumes:
       - ./.gallery:/app/.gallery
       - ./.uploads:/app/.uploads

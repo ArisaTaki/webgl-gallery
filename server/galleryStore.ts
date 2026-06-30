@@ -982,7 +982,7 @@ function normalizeManifestAssets(photo, id) {
 
 function legacyPhotoSlug(photo, index) {
   const frame = String(photo.index || index + 1).padStart(3, '0');
-  return `nian-nian-${frame}`;
+  return `webgl-gallery-${frame}`;
 }
 
 function buildGalleryPayload(state, { publicOnly, groupSlug }: any = {}) {

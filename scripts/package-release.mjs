@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const outDir = path.join(root, 'dist');
-const archivePath = path.join(outDir, 'nian-gallery.tar.gz');
+const archivePath = path.join(outDir, 'webgl-gallery.tar.gz');
 const installerPath = path.join(outDir, 'install.sh');
 
 await mkdir(outDir, { recursive: true });
@@ -41,7 +41,7 @@ console.log(JSON.stringify({
   archivePath,
   installerPath,
   archiveSizeBytes: archive.size,
-  example: 'curl -fsSL https://your-domain.example/install.sh | NIAN_GALLERY_SOURCE_URL=https://your-domain.example/nian-gallery.tar.gz sh',
+  example: 'curl -fsSL https://your-domain.example/install.sh | WEBGL_GALLERY_SOURCE_URL=https://your-domain.example/webgl-gallery.tar.gz sh',
 }, null, 2));
 
 function run(command, args) {

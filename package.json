@@ -1,6 +1,6 @@
 {
-  "name": "nian-gallery",
-  "version": "0.1.4",
+  "name": "webgl-gallery",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "scripts": {

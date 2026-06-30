@@ -193,11 +193,11 @@ try {
 
   const failures = [];
   expect(hoverEnter.mode === 'detail', 'Hover Enter should open detail mode.', failures);
-  expect(hoverEnter.pathname === '/nian-nian-002', `Hover Enter should open /nian-nian-002, got ${hoverEnter.pathname}.`, failures);
+  expect(hoverEnter.pathname === '/webgl-gallery-002', `Hover Enter should open /webgl-gallery-002, got ${hoverEnter.pathname}.`, failures);
   expect(detailAbout.mode === 'about' && detailAbout.pathname === '/about', 'Detail key A should open About.', failures);
   expect(detailAbout.aboutHidden === 'false', 'About panel should be visible after key A.', failures);
   expect(detailReturn.mode === 'detail', `About close key C should return to detail, got ${detailReturn.mode}.`, failures);
-  expect(detailReturn.pathname === '/nian-nian-002', `Detail return should restore /nian-nian-002, got ${detailReturn.pathname}.`, failures);
+  expect(detailReturn.pathname === '/webgl-gallery-002', `Detail return should restore /webgl-gallery-002, got ${detailReturn.pathname}.`, failures);
   expect(workStart.mode === 'work', `Detail key E should open work mode, got ${workStart.mode}.`, failures);
   expect(
     workAfterArrow.activeWorkIndex === EXPECTED_SECOND_WORK_MEDIA_INDEX,

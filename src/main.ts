@@ -498,7 +498,7 @@ function normalizePhotos(photos) {
       multiply: photoMultiplyFor(palette),
       palette,
       slug: photo.slug || makePhotoSlug(photo, index),
-      title: photo.title || `念念 ${String(index + 1).padStart(3, '0')}`,
+      title: photo.title || `Gallery ${String(index + 1).padStart(3, '0')}`,
       visitUrl: photo.visitUrl || photo.visit || '',
     };
   });
@@ -682,7 +682,7 @@ function warmWorkMediaImages(projectIndex = state.activeIndex) {
 
 function makePhotoSlug(photo, index) {
   const frame = String(photo.index || index + 1).padStart(3, '0');
-  return `nian-nian-${frame}`;
+  return `webgl-gallery-${frame}`;
 }
 
 function renderShell() {
@@ -883,12 +883,12 @@ function renderShell() {
       <section class="index-readout" aria-live="polite">
         <span data-current>001</span>
         <span data-total>${String(total).padStart(3, '0')}</span>
-        <strong data-title>念念 001</strong>
+        <strong data-title>Gallery 001</strong>
       </section>
 
       ${emptyState}
 
-      <section class="about-panel" aria-label="关于念念照片档案" aria-hidden="${state.mode !== VIEW.about}">
+      <section class="about-panel" aria-label="About WebGL Gallery" aria-hidden="${state.mode !== VIEW.about}">
         <div class="about-hero" aria-hidden="true">
           <span>NIAN</span>
           <span>NIAN</span>
@@ -1771,7 +1771,7 @@ function onKeyDown(event) {
   const key = event.key;
   const lowerKey = key.toLowerCase();
   state.keyBuffer = `${state.keyBuffer}${lowerKey}`.slice(-8);
-  if (state.keyBuffer.endsWith('nian')) {
+  if (state.keyBuffer.endsWith('webgl')) {
     setMode(VIEW.studio);
     (app.querySelector('input[name="key"]') as HTMLInputElement | null)?.focus();
   }
@@ -2987,7 +2987,7 @@ function updateUi() {
   document.body.dataset.galleryEmpty = state.photos.length ? 'false' : 'true';
   document.body.dataset.galleryMode = state.mode;
 
-  if (galleryEls.title) galleryEls.title.textContent = photo?.title || '念念';
+  if (galleryEls.title) galleryEls.title.textContent = photo?.title || 'Gallery';
   if (galleryEls.current) galleryEls.current.textContent = current;
   if (galleryEls.total) galleryEls.total.textContent = total;
   if (galleryEls.aboutTotal) galleryEls.aboutTotal.textContent = `${total} PHOTOS`;

@@ -3,7 +3,7 @@ import sharp from 'sharp';
 
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9239';
 const REF_URL = process.env.REF_URL || 'https://aristidebenoist.com/';
-const LOCAL_URL = process.env.LOCAL_URL || 'http://localhost:5279/nian-nian-001';
+const LOCAL_URL = process.env.LOCAL_URL || 'http://localhost:5279/webgl-gallery-001';
 const VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -12,7 +12,7 @@ async function staticChecks() {
   ]);
   const required = [
     ['studio route', main.includes('/studio')],
-    ['secret key buffer', main.includes('state.keyBuffer =') && main.includes("endsWith('nian')")],
+    ['secret key buffer', main.includes('state.keyBuffer =') && main.includes("endsWith('webgl')")],
     ['studio admin login', main.includes("fetch('/api/admin/login'")],
     ['upload key env', server.includes("process.env.GALLERY_UPLOAD_KEY || '13209'")],
     ['multer file limit', server.includes("upload.array('photos', 24)")],

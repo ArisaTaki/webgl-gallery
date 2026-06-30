@@ -13,7 +13,7 @@ const scriptedAnswers = input.isTTY ? null : await readScriptedAnswers();
 const rl = input.isTTY ? createInterface({ input, output }) : null;
 
 try {
-  console.log('\n念念照片画廊设置');
+  console.log('\nWebGL Gallery 设置');
   console.log(`配置文件: ${projectPath(runtime.configPath)}`);
   console.log('推荐普通使用：Local SQLite + Local folder。线上或多设备访问：Postgres + Cloudflare R2。\n');
 

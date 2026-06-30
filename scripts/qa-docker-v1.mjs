@@ -6,8 +6,8 @@ import path from 'node:path';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'gallery-docker-v1-'));
-const image = `nian-gallery:qa-${Date.now()}`;
-const container = `nian-gallery-qa-${process.pid}`;
+const image = `webgl-gallery:qa-${Date.now()}`;
+const container = `webgl-gallery-qa-${process.pid}`;
 const port = await getFreePort();
 const url = `http://127.0.0.1:${port}`;
 

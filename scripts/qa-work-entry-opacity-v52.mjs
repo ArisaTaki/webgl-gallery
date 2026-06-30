@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9239';
-const LOCAL_URL = process.env.LOCAL_URL || 'http://localhost:5279/nian-nian-001';
+const LOCAL_URL = process.env.LOCAL_URL || 'http://localhost:5279/webgl-gallery-001';
 const VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false };
 const WORK_ENTRY_OPACITY_MIN = 0.04;
 const WORK_ENTRY_OPACITY_MAX = 0.38;

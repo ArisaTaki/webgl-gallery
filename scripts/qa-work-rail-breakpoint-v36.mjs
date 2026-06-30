@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9239';
-const TARGET_URL = process.env.TARGET_URL || 'http://localhost:5279/nian-nian-002';
+const TARGET_URL = process.env.TARGET_URL || 'http://localhost:5279/webgl-gallery-002';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

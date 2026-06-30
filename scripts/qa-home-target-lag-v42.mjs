@@ -233,11 +233,11 @@ try {
   if (afterRightFast.current !== '001' || afterRightFast.mode !== 'index') {
     failures.push(`Expected fast ArrowRight to keep current 001 before Enter, got ${JSON.stringify(afterRightFast)}.`);
   }
-  if (afterEnterFast.mode !== 'detail' || afterEnterFast.path !== '/nian-nian-001') {
-    failures.push(`Expected immediate Enter after ArrowRight to open /nian-nian-001, got ${JSON.stringify(afterEnterFast)}.`);
+  if (afterEnterFast.mode !== 'detail' || afterEnterFast.path !== '/webgl-gallery-001') {
+    failures.push(`Expected immediate Enter after ArrowRight to open /webgl-gallery-001, got ${JSON.stringify(afterEnterFast)}.`);
   }
-  if (detailSettled.mode !== 'detail' || detailSettled.path !== '/nian-nian-001') {
-    failures.push(`Expected settled Detail to remain /nian-nian-001, got ${JSON.stringify(detailSettled)}.`);
+  if (detailSettled.mode !== 'detail' || detailSettled.path !== '/webgl-gallery-001') {
+    failures.push(`Expected settled Detail to remain /webgl-gallery-001, got ${JSON.stringify(detailSettled)}.`);
   }
   if (runtimeExceptions.length) {
     failures.push(`Runtime exceptions: ${JSON.stringify(runtimeExceptions)}`);

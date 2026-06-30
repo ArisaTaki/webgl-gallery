@@ -174,7 +174,7 @@ try {
   const homeEnter = await sample(client, 'home-enter-hover');
   await screenshot(client, '/tmp/local-reference-hover-v20-home-enter.png');
 
-  await client.send('Page.navigate', { url: 'http://localhost:5279/nian-nian-002' });
+  await client.send('Page.navigate', { url: 'http://localhost:5279/webgl-gallery-002' });
   await waitForMode(client, 'detail');
   await sleep(900);
   const detailBefore = await sample(client, 'detail-before-side-click');
@@ -188,14 +188,14 @@ try {
     .map((event) => event.params);
   const failures = [];
 
-  if (homeEnter.mode !== 'detail' || homeEnter.pathname !== '/nian-nian-002') {
-    failures.push(`Expected Enter from reference-style pixel hovered plane to open /nian-nian-002, got ${JSON.stringify({ homeHover, homeEnter })}.`);
+  if (homeEnter.mode !== 'detail' || homeEnter.pathname !== '/webgl-gallery-002') {
+    failures.push(`Expected Enter from reference-style pixel hovered plane to open /webgl-gallery-002, got ${JSON.stringify({ homeHover, homeEnter })}.`);
   }
-  if (detailBefore.pathname !== '/nian-nian-002' || !detailBefore.frame.includes('002')) {
-    failures.push(`Expected detail before click at /nian-nian-002, got ${JSON.stringify(detailBefore)}.`);
+  if (detailBefore.pathname !== '/webgl-gallery-002' || !detailBefore.frame.includes('002')) {
+    failures.push(`Expected detail before click at /webgl-gallery-002, got ${JSON.stringify(detailBefore)}.`);
   }
-  if (detailAfter.mode !== 'detail' || detailAfter.pathname !== '/nian-nian-003' || !detailAfter.frame.includes('003')) {
-    failures.push(`Expected side-plane click to switch to /nian-nian-003 in detail mode, got ${JSON.stringify(detailAfter)}.`);
+  if (detailAfter.mode !== 'detail' || detailAfter.pathname !== '/webgl-gallery-003' || !detailAfter.frame.includes('003')) {
+    failures.push(`Expected side-plane click to switch to /webgl-gallery-003 in detail mode, got ${JSON.stringify(detailAfter)}.`);
   }
   if (runtimeExceptions.length) failures.push(`Runtime exceptions: ${JSON.stringify(runtimeExceptions)}`);
 

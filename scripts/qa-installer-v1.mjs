@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'gallery-installer-v1-'));
 const root = path.resolve(new URL('..', import.meta.url).pathname);
-const archivePath = path.join(tempRoot, 'nian-gallery.tar.gz');
+const archivePath = path.join(tempRoot, 'webgl-gallery.tar.gz');
 const installDir = path.join(tempRoot, 'installed');
 
 try {
@@ -40,12 +40,12 @@ try {
     cwd: tempRoot,
     env: {
       ...process.env,
-      NIAN_GALLERY_DIR: installDir,
-      NIAN_GALLERY_INSTALL_MODE: 'node',
-      NIAN_GALLERY_SKIP_INSTALL: '1',
-      NIAN_GALLERY_SKIP_SETUP: '1',
-      NIAN_GALLERY_SKIP_START: '1',
-      NIAN_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
+      WEBGL_GALLERY_DIR: installDir,
+      WEBGL_GALLERY_INSTALL_MODE: 'node',
+      WEBGL_GALLERY_SKIP_INSTALL: '1',
+      WEBGL_GALLERY_SKIP_SETUP: '1',
+      WEBGL_GALLERY_SKIP_START: '1',
+      WEBGL_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
     },
   });
 
@@ -54,26 +54,26 @@ try {
   await access(path.join(installDir, 'install.sh'));
   await mkdir(path.join(installDir, '.gallery'), { recursive: true });
   await writeFile(path.join(installDir, '.gallery', 'config.json'), '{"setupComplete":true}\n');
-  await writeFile(path.join(installDir, '.env'), 'NIAN_GALLERY_IMAGE_MODE=prebuilt\nCLOUDFLARE_TUNNEL_TOKEN=test-token\n');
+  await writeFile(path.join(installDir, '.env'), 'WEBGL_GALLERY_IMAGE_MODE=prebuilt\nCLOUDFLARE_TUNNEL_TOKEN=test-token\n');
   await writeFile(path.join(installDir, 'README.md'), 'stale local file\n');
 
   const update = await run('sh', [path.join(root, 'install.sh')], {
     cwd: tempRoot,
     env: {
       ...process.env,
-      NIAN_GALLERY_ACTION: 'update',
-      NIAN_GALLERY_DIR: installDir,
-      NIAN_GALLERY_INSTALL_MODE: 'node',
-      NIAN_GALLERY_SKIP_INSTALL: '1',
-      NIAN_GALLERY_SKIP_SETUP: '1',
-      NIAN_GALLERY_SKIP_START: '1',
-      NIAN_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
+      WEBGL_GALLERY_ACTION: 'update',
+      WEBGL_GALLERY_DIR: installDir,
+      WEBGL_GALLERY_INSTALL_MODE: 'node',
+      WEBGL_GALLERY_SKIP_INSTALL: '1',
+      WEBGL_GALLERY_SKIP_SETUP: '1',
+      WEBGL_GALLERY_SKIP_START: '1',
+      WEBGL_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
     },
   });
   const refreshedReadme = await readFile(path.join(installDir, 'README.md'), 'utf8');
   const preservedEnv = await readFile(path.join(installDir, '.env'), 'utf8');
   const preservedConfig = await readFile(path.join(installDir, '.gallery', 'config.json'), 'utf8');
-  if (!refreshedReadme.startsWith('# 念念照片画廊')) throw new Error('Installer update did not refresh project files.');
+  if (!refreshedReadme.startsWith('# WebGL Gallery')) throw new Error('Installer update did not refresh project files.');
   if (!preservedEnv.includes('CLOUDFLARE_TUNNEL_TOKEN=test-token')) throw new Error('Installer update did not preserve .env.');
   if (!preservedConfig.includes('"setupComplete":true')) throw new Error('Installer update did not preserve .gallery config.');
 

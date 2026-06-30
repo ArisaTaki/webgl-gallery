@@ -2,7 +2,7 @@ import fs from 'node:fs';
 
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9239';
 const HOME_URL = process.env.HOME_URL || 'http://localhost:5279/';
-const DETAIL_URL = process.env.DETAIL_URL || 'http://localhost:5279/nian-nian-002';
+const DETAIL_URL = process.env.DETAIL_URL || 'http://localhost:5279/webgl-gallery-002';
 const VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -218,8 +218,8 @@ try {
     if (aX > -35) failures.push(`Expected Home pgn-a to sit outside the left crop, got ${homeWindow.aTransform}.`);
     if (bX > -35) failures.push(`Expected Home pgn-b to sit outside the left crop, got ${homeWindow.bTransform}.`);
   }
-  if (entry120.mode !== 'detail' || entry120.path !== '/nian-nian-001') {
-    failures.push(`Expected Home Enter to open Detail /nian-nian-001, got ${JSON.stringify(entry120)}.`);
+  if (entry120.mode !== 'detail' || entry120.path !== '/webgl-gallery-001') {
+    failures.push(`Expected Home Enter to open Detail /webgl-gallery-001, got ${JSON.stringify(entry120)}.`);
   }
   if (!entry) {
     failures.push(`Expected active pgn 0 entering at 120ms, got ${JSON.stringify(entry120.entries)}.`);

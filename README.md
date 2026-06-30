@@ -1,4 +1,4 @@
-# 念念照片画廊
+# WebGL Gallery
 
 一个本地优先的 TypeScript WebGL 家庭相册。前端使用 Three.js shader 做横向胶片带、滚动形变、颗粒和暗角；服务端负责上传照片、生成 WebP 派生图并更新照片清单。
 
@@ -44,32 +44,32 @@ npm run package:release
 这会生成：
 
 - `dist/install.sh`
-- `dist/nian-gallery.tar.gz`
+- `dist/webgl-gallery.tar.gz`
 
 把这两个文件上传到同一个可公开下载的位置后，用户只需要：
 
 ```bash
 curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
-  NIAN_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/nian-gallery.tar.gz sh
+  WEBGL_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/webgl-gallery.tar.gz sh
 ```
 
 这条命令会在用户机器上构建本地镜像，最稳妥。如果 GitHub Release 已经发布了 GHCR 镜像，可以改用预构建镜像，启动会更快：
 
 ```bash
 curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
-  NIAN_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/nian-gallery.tar.gz \
-  NIAN_GALLERY_IMAGE_MODE=prebuilt \
-  NIAN_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest sh
+  WEBGL_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/webgl-gallery.tar.gz \
+  WEBGL_GALLERY_IMAGE_MODE=prebuilt \
+  WEBGL_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest sh
 ```
 
 也可以直接从 GitHub 仓库安装：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ArisaTaki/webgl-gallery/main/install.sh | \
-  NIAN_GALLERY_REPO_URL=https://github.com/ArisaTaki/webgl-gallery.git sh
+  WEBGL_GALLERY_REPO_URL=https://github.com/ArisaTaki/webgl-gallery.git sh
 ```
 
-默认会安装到 `~/nian-gallery`，可以用 `NIAN_GALLERY_DIR=/path/to/gallery` 指定位置。脚本会检查 Docker 和 Docker Compose，下载源码，生成 `.env`，创建持久化目录，然后执行：
+默认会安装到 `~/webgl-gallery`，可以用 `WEBGL_GALLERY_DIR=/path/to/gallery` 指定位置。脚本会检查 Docker 和 Docker Compose，下载源码，生成 `.env`，创建持久化目录，然后执行：
 
 ```bash
 docker compose up -d --build
@@ -85,10 +85,10 @@ docker compose -f docker-compose.image.yml up -d
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ArisaTaki/webgl-gallery/main/install.sh | \
-  NIAN_GALLERY_ACTION=update \
-  NIAN_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/archive/refs/heads/main.tar.gz \
-  NIAN_GALLERY_IMAGE_MODE=prebuilt \
-  NIAN_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest sh
+  WEBGL_GALLERY_ACTION=update \
+  WEBGL_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/archive/refs/heads/main.tar.gz \
+  WEBGL_GALLERY_IMAGE_MODE=prebuilt \
+  WEBGL_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest sh
 ```
 
 GitHub `main` 分支有新 push 时，Release workflow 会跑完整校验并刷新 GHCR 的 `latest`、`main` 和 `sha-*` 镜像标签；推送 `v*` tag 时仍然会生成正式 GitHub Release 和安装包附件。
@@ -96,7 +96,7 @@ GitHub `main` 分支有新 push 时，Release workflow 会跑完整校验并刷�
 如果需要走 Node 本地模式，可以设置：
 
 ```bash
-NIAN_GALLERY_INSTALL_MODE=node sh install.sh
+WEBGL_GALLERY_INSTALL_MODE=node sh install.sh
 ```
 
 配置完成后可以随时检查当前存储和设置是否可用：
@@ -146,7 +146,7 @@ R2 配置保存时会做一次实际检查：向公开 bucket 和私有 bucket �
 http://localhost:5279/studio
 ```
 
-也可以在画廊里直接输入 `nian` 打开隐藏管理入口。开发时仍然可以用热更新命令：
+也可以在画廊里直接输入 `webgl` 打开隐藏管理入口。开发时仍然可以用热更新命令：
 
 ```bash
 npm run dev

@@ -208,7 +208,7 @@ try {
   const homeScrolled = await sample(client, 'home-scrolled-base');
   await screenshot(client, '/tmp/local-home-base-palette-v43-home-scrolled.png');
 
-  await client.send('Page.navigate', { url: 'http://localhost:5279/nian-nian-001' });
+  await client.send('Page.navigate', { url: 'http://localhost:5279/webgl-gallery-001' });
   await waitForMode(client, 'detail');
   await sleep(1100);
 

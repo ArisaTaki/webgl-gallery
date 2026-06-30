@@ -8,17 +8,17 @@ import { pathToFileURL } from 'node:url';
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'gallery-docker-install-v1-'));
 const installDir = path.join(tempRoot, 'installed');
-const composeProject = `nian-gallery-install-qa-${process.pid}-${Date.now()}`.toLowerCase();
+const composeProject = `webgl-gallery-install-qa-${process.pid}-${Date.now()}`.toLowerCase();
 const image = `${composeProject}:local`;
 const port = await getFreePort();
 const url = `http://127.0.0.1:${port}`;
 const env = {
   ...process.env,
-  NIAN_GALLERY_DIR: installDir,
-  NIAN_GALLERY_SOURCE_URL: pathToFileURL(path.join(root, 'dist', 'nian-gallery.tar.gz')).href,
-  NIAN_GALLERY_PORT: String(port),
-  NIAN_GALLERY_COMPOSE_PROJECT: composeProject,
-  NIAN_GALLERY_IMAGE: image,
+  WEBGL_GALLERY_DIR: installDir,
+  WEBGL_GALLERY_SOURCE_URL: pathToFileURL(path.join(root, 'dist', 'webgl-gallery.tar.gz')).href,
+  WEBGL_GALLERY_PORT: String(port),
+  WEBGL_GALLERY_COMPOSE_PROJECT: composeProject,
+  WEBGL_GALLERY_IMAGE: image,
   CLOUDFLARE_TUNNEL_TOKEN: '',
 };
 

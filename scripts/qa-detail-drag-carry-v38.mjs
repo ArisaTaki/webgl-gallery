@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 
 const CDP_URL = process.env.CDP_URL || 'http://127.0.0.1:9239';
-const TARGET_URL = process.env.TARGET_URL || 'http://localhost:5279/nian-nian-002';
+const TARGET_URL = process.env.TARGET_URL || 'http://localhost:5279/webgl-gallery-002';
 const VIEWPORT = { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -184,8 +184,8 @@ try {
     .map((event) => event.params);
   const failures = [];
 
-  if (before.mode !== 'detail' || before.path !== '/nian-nian-002') {
-    failures.push(`Expected to start in Detail /nian-nian-002, got ${JSON.stringify(before)}.`);
+  if (before.mode !== 'detail' || before.path !== '/webgl-gallery-002') {
+    failures.push(`Expected to start in Detail /webgl-gallery-002, got ${JSON.stringify(before)}.`);
   }
   if (mid.mode !== 'index' || mid.path !== '/') {
     failures.push(`Expected drag threshold to leave Detail for Home, got ${JSON.stringify(mid)}.`);

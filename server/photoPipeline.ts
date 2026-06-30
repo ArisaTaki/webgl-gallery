@@ -180,7 +180,7 @@ export async function syncSourcePhotos({
         mediaDir,
         id,
         sourceName: source.fileName,
-        title: `念念 ${String(index + 1).padStart(3, '0')}`,
+        title: `Gallery ${String(index + 1).padStart(3, '0')}`,
       }),
     );
   }
@@ -204,7 +204,7 @@ export async function addUploadedPhotos({
   files,
   manifestPath,
   mediaDir,
-  titlePrefix = '念念',
+  titlePrefix = 'Gallery',
 }) {
   const current = await loadManifest(manifestPath);
   const nextPhotos = [...current.photos];
@@ -265,7 +265,7 @@ async function prepareSharpInput(inputPath) {
       cleanup: async () => {},
     };
   } catch (error) {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'nian-gallery-'));
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'webgl-gallery-'));
     const convertedPath = path.join(tempDir, `${path.basename(inputPath)}.png`);
     await execFileAsync('sips', ['-s', 'format', 'png', inputPath, '--out', convertedPath]);
     await sharp(convertedPath, { limitInputPixels: false }).metadata();

@@ -8,7 +8,7 @@ import sharp from 'sharp';
 const UPLOAD_KEY = 'qa-secret-13209';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'nian-upload-v106-'));
+const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'webgl-upload-v106-'));
 const dataDir = path.join(tempRoot, 'data');
 const mediaDir = path.join(tempRoot, 'media');
 const uploadDir = path.join(tempRoot, 'uploads');

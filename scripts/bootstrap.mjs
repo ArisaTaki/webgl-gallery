@@ -6,19 +6,19 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-if (process.env.NIAN_GALLERY_SKIP_INSTALL === '1') {
-  console.log('\nSkipping npm install because NIAN_GALLERY_SKIP_INSTALL=1.');
+if (process.env.WEBGL_GALLERY_SKIP_INSTALL === '1') {
+  console.log('\nSkipping npm install because WEBGL_GALLERY_SKIP_INSTALL=1.');
 } else if (!(await exists(path.join(root, 'node_modules')))) {
   await run(npm, ['install']);
 }
 
-if (process.env.NIAN_GALLERY_SKIP_SETUP === '1') {
-  console.log('\nSkipping setup because NIAN_GALLERY_SKIP_SETUP=1.');
+if (process.env.WEBGL_GALLERY_SKIP_SETUP === '1') {
+  console.log('\nSkipping setup because WEBGL_GALLERY_SKIP_SETUP=1.');
 } else {
   await run(npm, ['run', 'setup']);
 }
 
-if (process.env.NIAN_GALLERY_SKIP_START === '1') {
+if (process.env.WEBGL_GALLERY_SKIP_START === '1') {
   console.log('\nSetup finished. Start later with: npm start');
 } else {
   await run(npm, ['start']);

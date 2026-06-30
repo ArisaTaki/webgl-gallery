@@ -76,5 +76,5 @@ jobs:
         with:
           files: |
             dist/install.sh
-            dist/nian-gallery.tar.gz
+            dist/webgl-gallery.tar.gz
           generate_release_notes: true

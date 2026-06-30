@@ -4,7 +4,7 @@ import { access, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = path.resolve(new URL('..', import.meta.url).pathname);
-const archivePath = path.join(root, 'dist', 'nian-gallery.tar.gz');
+const archivePath = path.join(root, 'dist', 'webgl-gallery.tar.gz');
 const installerPath = path.join(root, 'dist', 'install.sh');
 
 await access(archivePath);
@@ -49,7 +49,7 @@ const forbidden = archiveList.filter((entry) => forbiddenPatterns.some((pattern)
 assert.deepEqual(forbidden, [], `Release archive contains runtime-only files: ${forbidden.join(', ')}`);
 
 const exampleEnv = await readFile(path.join(root, '.env.example'), 'utf8');
-assert.match(exampleEnv, /^NIAN_GALLERY_HOSTNAME=gallery\.irop\.one$/m);
+assert.match(exampleEnv, /^WEBGL_GALLERY_HOSTNAME=gallery\.irop\.one$/m);
 assert.match(exampleEnv, /^CLOUDFLARE_TUNNEL_TOKEN=$/m);
 assert.match(exampleEnv, /^R2_PUBLIC_BASE_URL=$/m);
 
