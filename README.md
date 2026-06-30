@@ -14,13 +14,13 @@ docker compose up -d --build
 打开：
 
 ```text
-http://localhost:5279
+http://localhost:5280
 ```
 
 第一次启动如果还没有配置，会自动进入：
 
 ```text
-http://localhost:5279/setup
+http://localhost:5280/setup
 ```
 
 推荐先选择默认的 `Local SQLite` + `Local folder`，填一个后台密码后保存。这样不需要 R2、Postgres 或额外图床服务，马上就能用 `/studio` 上传和管理相册。设置页支持中文和英文，可以右上角切换语言。
@@ -35,47 +35,46 @@ npm start
 
 ## Docker 发布
 
-发布给家人或朋友时，可以把项目打成 `.tar.gz` 并托管，然后用 `install.sh` 做 curl 风格 Docker 安装：
+发布给家人或朋友时，推荐直接使用 GitHub Release 里的安装脚本：
 
 ```bash
-npm run package:release
+curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | sh
 ```
 
-这会生成：
+默认行为：
 
-- `dist/install.sh`
-- `dist/webgl-gallery.tar.gz`
+- 安装到 `~/webgl-gallery`
+- 下载 latest release 包
+- 使用 GHCR 预构建 Docker 镜像
+- 监听宿主机 `5280` 端口
+- 没有 R2 配置时使用本地图片存储
+- 没有 Cloudflare Tunnel token 时只启动 gallery 容器
 
-把这两个文件上传到同一个可公开下载的位置后，用户只需要：
+如果要同时启用 Cloudflare Tunnel，只需要多传 token：
 
 ```bash
 curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
-  WEBGL_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/webgl-gallery.tar.gz sh
+  CLOUDFLARE_TUNNEL_TOKEN="..." sh
 ```
 
-这条命令会在用户机器上构建本地镜像，最稳妥。如果 GitHub Release 已经发布了 GHCR 镜像，可以改用预构建镜像，启动会更快：
+高级用法才需要传参数，例如指定安装目录、改端口、改为服务器本地 build，或从 Git 仓库安装：
 
 ```bash
 curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
-  WEBGL_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/webgl-gallery.tar.gz \
-  WEBGL_GALLERY_IMAGE_MODE=prebuilt \
-  WEBGL_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest sh
+  WEBGL_GALLERY_DIR=/opt/webgl-gallery \
+  WEBGL_GALLERY_PORT=8080 \
+  WEBGL_GALLERY_IMAGE_MODE=build sh
 ```
 
 也可以直接从 GitHub 仓库安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ArisaTaki/webgl-gallery/main/install.sh | \
-  WEBGL_GALLERY_REPO_URL=https://github.com/ArisaTaki/webgl-gallery.git sh
+curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
+  WEBGL_GALLERY_REPO_URL=https://github.com/ArisaTaki/webgl-gallery.git \
+  WEBGL_GALLERY_IMAGE_MODE=build sh
 ```
 
-默认会安装到 `~/webgl-gallery`，可以用 `WEBGL_GALLERY_DIR=/path/to/gallery` 指定位置。脚本会检查 Docker 和 Docker Compose，下载源码，生成 `.env`，创建持久化目录，然后执行：
-
-```bash
-docker compose up -d --build
-```
-
-预构建镜像模式会改用：
+脚本会检查 Docker 和 Docker Compose，下载源码，生成 `.env`，创建持久化目录，然后执行：
 
 ```bash
 docker compose -f docker-compose.image.yml up -d
@@ -113,11 +112,8 @@ sh install.sh
 如果服务器已经部署过，可以用更新模式刷新代码并重启 Docker。`.env`、`.gallery` 和 `.uploads` 会保留；更新时脚本会优先读取 `.gallery/config.json` 里的 `storage.kind`，已有 R2 配置不需要再把 R2 密钥复制到 `.env`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ArisaTaki/webgl-gallery/main/install.sh | \
-  WEBGL_GALLERY_ACTION=update \
-  WEBGL_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/archive/refs/heads/main.tar.gz \
-  WEBGL_GALLERY_IMAGE_MODE=prebuilt \
-  WEBGL_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest sh
+curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | \
+  WEBGL_GALLERY_ACTION=update sh
 ```
 
 GitHub `main` 分支有新 push 时，Release workflow 会跑完整校验并刷新 GHCR 的 `latest`、`main` 和 `sha-*` 镜像标签；推送 `v*` tag 时仍然会生成正式 GitHub Release 和安装包附件。
@@ -172,7 +168,7 @@ R2 配置保存时会做一次实际检查：向公开 bucket 和私有 bucket �
 隐藏管理入口：
 
 ```text
-http://localhost:5279/studio
+http://localhost:5280/studio
 ```
 
 也可以在画廊里直接输入 `webgl` 打开隐藏管理入口。开发时仍然可以用热更新命令：

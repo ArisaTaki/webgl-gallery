@@ -2,6 +2,9 @@
 set -eu
 
 APP_NAME="webgl-gallery"
+DEFAULT_SOURCE_URL="${WEBGL_GALLERY_DEFAULT_SOURCE_URL:-https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/webgl-gallery.tar.gz}"
+DEFAULT_PREBUILT_IMAGE="${WEBGL_GALLERY_DEFAULT_IMAGE:-ghcr.io/arisataki/webgl-gallery:latest}"
+DEFAULT_PORT="${WEBGL_GALLERY_DEFAULT_PORT:-5280}"
 INSTALL_DIR="${WEBGL_GALLERY_DIR:-$HOME/$APP_NAME}"
 INSTALL_MODE="${WEBGL_GALLERY_INSTALL_MODE:-docker}"
 ACTION="${WEBGL_GALLERY_ACTION:-install}"
@@ -9,7 +12,7 @@ SOURCE_URL="${WEBGL_GALLERY_SOURCE_URL:-${WEBGL_GALLERY_SOURCE:-}}"
 REPO_URL="${WEBGL_GALLERY_REPO_URL:-${WEBGL_GALLERY_REPO:-}}"
 BRANCH="${WEBGL_GALLERY_BRANCH:-main}"
 HOSTNAME="${WEBGL_GALLERY_HOSTNAME:-gallery.irop.one}"
-IMAGE_MODE="${WEBGL_GALLERY_IMAGE_MODE:-build}"
+IMAGE_MODE="${WEBGL_GALLERY_IMAGE_MODE:-prebuilt}"
 STORAGE_MODE="${WEBGL_GALLERY_STORAGE_MODE:-}"
 
 if [ "${WEBGL_GALLERY_UPDATE:-}" = "1" ]; then
@@ -111,9 +114,13 @@ prepare_env() {
   HOSTNAME="${WEBGL_GALLERY_HOSTNAME:-$(env_value WEBGL_GALLERY_HOSTNAME "$HOSTNAME")}"
   IMAGE_MODE="${WEBGL_GALLERY_IMAGE_MODE:-$(env_value WEBGL_GALLERY_IMAGE_MODE "$IMAGE_MODE")}"
   STORAGE_MODE="${WEBGL_GALLERY_STORAGE_MODE:-$(env_value WEBGL_GALLERY_STORAGE_MODE "$STORAGE_MODE")}"
-  WEBGL_GALLERY_PORT="${WEBGL_GALLERY_PORT:-$(env_value WEBGL_GALLERY_PORT 5279)}"
+  WEBGL_GALLERY_PORT="${WEBGL_GALLERY_PORT:-$(env_value WEBGL_GALLERY_PORT "$DEFAULT_PORT")}"
   WEBGL_GALLERY_COMPOSE_PROJECT="${WEBGL_GALLERY_COMPOSE_PROJECT:-$(env_value WEBGL_GALLERY_COMPOSE_PROJECT webgl-gallery)}"
-  WEBGL_GALLERY_IMAGE="${WEBGL_GALLERY_IMAGE:-$(env_value WEBGL_GALLERY_IMAGE)}"
+  default_image="$DEFAULT_PREBUILT_IMAGE"
+  if [ "$IMAGE_MODE" = "build" ]; then
+    default_image="webgl-gallery:local"
+  fi
+  WEBGL_GALLERY_IMAGE="${WEBGL_GALLERY_IMAGE:-$(env_value WEBGL_GALLERY_IMAGE "$default_image")}"
   set_env WEBGL_GALLERY_COMPOSE_PROJECT "$WEBGL_GALLERY_COMPOSE_PROJECT"
   set_env WEBGL_GALLERY_HOSTNAME "$HOSTNAME"
   set_env WEBGL_GALLERY_PORT "$WEBGL_GALLERY_PORT"
@@ -379,7 +386,7 @@ start_docker() {
   else
     docker compose up -d --build
     log ""
-    log "WebGL Gallery is starting at http://localhost:${WEBGL_GALLERY_PORT:-5279}"
+    log "WebGL Gallery is starting at http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}"
     log "To expose $HOSTNAME, set CLOUDFLARE_TUNNEL_TOKEN in .env and run:"
     log "  docker compose --profile tunnel up -d"
   fi
@@ -387,14 +394,14 @@ start_docker() {
   if has_tunnel_token; then
     log "Public URL: https://$HOSTNAME"
   fi
-  log "Setup page: http://localhost:${WEBGL_GALLERY_PORT:-5279}/setup"
-  log "Studio: http://localhost:${WEBGL_GALLERY_PORT:-5279}/studio"
+  log "Setup page: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/setup"
+  log "Studio: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/studio"
   log "Update later: rerun this installer with WEBGL_GALLERY_ACTION=update; .env, .gallery, and .uploads are preserved."
 }
 
 start_docker_prebuilt() {
   [ -f docker-compose.image.yml ] || fail "docker-compose.image.yml is required for WEBGL_GALLERY_IMAGE_MODE=prebuilt."
-  log "Using prebuilt Docker image: ${WEBGL_GALLERY_IMAGE:-ghcr.io/arisataki/webgl-gallery:latest}"
+  log "Using prebuilt Docker image: ${WEBGL_GALLERY_IMAGE:-$DEFAULT_PREBUILT_IMAGE}"
   docker compose -f docker-compose.image.yml pull gallery || log "Image pull was skipped or failed; Docker will use a local image if available."
   if has_tunnel_token; then
     docker compose -f docker-compose.image.yml --profile tunnel up -d
@@ -403,7 +410,7 @@ start_docker_prebuilt() {
   else
     docker compose -f docker-compose.image.yml up -d
     log ""
-    log "WebGL Gallery is starting at http://localhost:${WEBGL_GALLERY_PORT:-5279}"
+    log "WebGL Gallery is starting at http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}"
     log "To expose $HOSTNAME, set CLOUDFLARE_TUNNEL_TOKEN in .env and run:"
     log "  docker compose -f docker-compose.image.yml --profile tunnel up -d"
   fi
@@ -411,13 +418,13 @@ start_docker_prebuilt() {
   if has_tunnel_token; then
     log "Public URL: https://$HOSTNAME"
   fi
-  log "Setup page: http://localhost:${WEBGL_GALLERY_PORT:-5279}/setup"
-  log "Studio: http://localhost:${WEBGL_GALLERY_PORT:-5279}/studio"
+  log "Setup page: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/setup"
+  log "Studio: http://localhost:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/studio"
   log "Update later: rerun this installer with WEBGL_GALLERY_ACTION=update; .env, .gallery, and .uploads are preserved."
 }
 
 wait_for_gallery() {
-  url="http://127.0.0.1:${WEBGL_GALLERY_PORT:-5279}/api/setup/status"
+  url="http://127.0.0.1:${WEBGL_GALLERY_PORT:-$DEFAULT_PORT}/api/setup/status"
   if ! command -v curl >/dev/null 2>&1; then
     return 0
   fi
@@ -456,9 +463,11 @@ if [ "$ACTION" = "update" ]; then
     INSTALL_DIR="$(pwd)"
     log "Updating current project directory: $INSTALL_DIR"
   elif is_project_dir "$INSTALL_DIR"; then
-    log "Updating existing install directory: $INSTALL_DIR"
+    SOURCE_URL="$DEFAULT_SOURCE_URL"
+    log "Updating $APP_NAME from latest release into $INSTALL_DIR"
+    download_archive "$SOURCE_URL" "$INSTALL_DIR"
   else
-    fail "No existing install found. Set WEBGL_GALLERY_SOURCE_URL or WEBGL_GALLERY_REPO_URL, or run without WEBGL_GALLERY_ACTION=update for a fresh install."
+    fail "No existing install found. Run without WEBGL_GALLERY_ACTION=update for a fresh install."
   fi
 elif is_project_dir "$(pwd)"; then
   INSTALL_DIR="$(pwd)"
@@ -473,10 +482,9 @@ else
     log "Cloning $APP_NAME to $INSTALL_DIR"
     clone_repo "$REPO_URL" "$INSTALL_DIR"
   else
-    fail "Set WEBGL_GALLERY_SOURCE_URL to a .tar.gz archive or WEBGL_GALLERY_REPO_URL to a git repository.
-
-Example:
-  curl -fsSL https://example.com/webgl-gallery/install.sh | WEBGL_GALLERY_SOURCE_URL=https://example.com/webgl-gallery.tar.gz sh"
+    SOURCE_URL="$DEFAULT_SOURCE_URL"
+    log "Downloading $APP_NAME latest release to $INSTALL_DIR"
+    download_archive "$SOURCE_URL" "$INSTALL_DIR"
   fi
 fi
 

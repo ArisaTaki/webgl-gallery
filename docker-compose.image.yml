@@ -21,7 +21,7 @@ services:
       R2_PRIVATE_BUCKET: ${R2_PRIVATE_BUCKET:-}
       R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
     ports:
-      - "${WEBGL_GALLERY_PORT:-5279}:5279"
+      - "${WEBGL_GALLERY_PORT:-5280}:5279"
     volumes:
       - ./.gallery:/app/.gallery
       - ./.uploads:/app/.uploads

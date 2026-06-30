@@ -47,7 +47,7 @@ try {
       WEBGL_GALLERY_SKIP_INSTALL: '1',
       WEBGL_GALLERY_SKIP_SETUP: '1',
       WEBGL_GALLERY_SKIP_START: '1',
-      WEBGL_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
+      WEBGL_GALLERY_DEFAULT_SOURCE_URL: pathToFileURL(archivePath).href,
     },
   });
 
@@ -56,6 +56,9 @@ try {
   await access(path.join(installDir, 'install.sh'));
   const firstEnv = await readFile(path.join(installDir, '.env'), 'utf8');
   if (!firstEnv.includes('WEBGL_GALLERY_STORAGE_MODE=local')) throw new Error('Installer did not default to local storage mode.');
+  if (!firstEnv.includes('WEBGL_GALLERY_IMAGE_MODE=prebuilt')) throw new Error('Installer did not default to prebuilt image mode.');
+  if (!firstEnv.includes('WEBGL_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest')) throw new Error('Installer did not default to the GHCR latest image.');
+  if (!firstEnv.includes('WEBGL_GALLERY_PORT=5280')) throw new Error('Installer did not default to port 5280.');
   if (firstEnv.includes('R2_ACCOUNT_ID=')) throw new Error('Local install should remove blank R2 placeholders.');
 
   const r2Install = await run('sh', [path.join(root, 'install.sh')], {

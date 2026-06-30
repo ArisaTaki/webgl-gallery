@@ -41,7 +41,7 @@ console.log(JSON.stringify({
   archivePath,
   installerPath,
   archiveSizeBytes: archive.size,
-  example: 'curl -fsSL https://your-domain.example/install.sh | WEBGL_GALLERY_SOURCE_URL=https://your-domain.example/webgl-gallery.tar.gz sh',
+  example: 'curl -fsSL https://github.com/ArisaTaki/webgl-gallery/releases/latest/download/install.sh | sh',
 }, null, 2));
 
 function run(command, args) {

@@ -18,7 +18,6 @@ const env = {
   WEBGL_GALLERY_SOURCE_URL: pathToFileURL(path.join(root, 'dist', 'webgl-gallery.tar.gz')).href,
   WEBGL_GALLERY_PORT: String(port),
   WEBGL_GALLERY_COMPOSE_PROJECT: composeProject,
-  WEBGL_GALLERY_IMAGE_MODE: 'prebuilt',
   WEBGL_GALLERY_IMAGE: image,
   CLOUDFLARE_TUNNEL_TOKEN: '',
 };

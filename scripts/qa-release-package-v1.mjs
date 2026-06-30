@@ -49,6 +49,9 @@ const forbidden = archiveList.filter((entry) => forbiddenPatterns.some((pattern)
 assert.deepEqual(forbidden, [], `Release archive contains runtime-only files: ${forbidden.join(', ')}`);
 
 const exampleEnv = await readFile(path.join(root, '.env.example'), 'utf8');
+assert.match(exampleEnv, /^WEBGL_GALLERY_PORT=5280$/m);
+assert.match(exampleEnv, /^WEBGL_GALLERY_IMAGE_MODE=prebuilt$/m);
+assert.match(exampleEnv, /^WEBGL_GALLERY_IMAGE=ghcr\.io\/arisataki\/webgl-gallery:latest$/m);
 assert.match(exampleEnv, /^WEBGL_GALLERY_HOSTNAME=gallery\.irop\.one$/m);
 assert.match(exampleEnv, /^CLOUDFLARE_TUNNEL_TOKEN=$/m);
 assert.match(exampleEnv, /^R2_PUBLIC_BASE_URL=$/m);

@@ -17,7 +17,7 @@ async function staticChecks() {
     ['upload key env', server.includes("process.env.GALLERY_UPLOAD_KEY || '13209'")],
     ['multer file limit', server.includes("upload.array('photos', 24)")],
     ['webp variants', pipeline.includes("{ key: 'thumb'") && pipeline.includes("{ key: 'large'")],
-    ['readme studio docs', readme.includes('http://localhost:5279/studio') && readme.includes('GALLERY_ADMIN_PASSWORD_HASH')],
+    ['readme studio docs', readme.includes('http://localhost:5280/studio') && readme.includes('GALLERY_ADMIN_PASSWORD_HASH')],
   ];
   return required.filter(([, ok]) => !ok).map(([name]) => `Missing static studio check: ${name}`);
 }
