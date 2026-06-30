@@ -2498,6 +2498,12 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 }
 
 .studio-shell {
+  --studio-panel: rgba(15, 16, 15, 0.96);
+  --studio-line: rgba(236, 235, 227, 0.12);
+  --studio-line-strong: rgba(236, 235, 227, 0.22);
+  --studio-accent: #d7c681;
+  --studio-accent-rgb: 215, 198, 129;
+  --studio-ink: #edf1e8;
   display: grid;
   width: min(1260px, 100%);
   gap: 12px;
@@ -2510,9 +2516,14 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   width: min(430px, 100%);
   gap: 18px;
   padding: clamp(26px, 4vw, 42px);
-  border: 1px solid rgba(236, 235, 227, 0.2);
-  background: rgba(14, 14, 13, 0.94);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--studio-line-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    rgba(14, 14, 13, 0.95);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .studio-login-form {
@@ -2528,9 +2539,15 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   min-height: 0;
   overflow: hidden;
   padding: clamp(16px, 2.5vw, 26px);
-  border: 1px solid rgba(236, 235, 227, 0.2);
-  background: rgba(13, 13, 12, 0.96);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--studio-line-strong);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at top left, rgba(var(--studio-accent-rgb), 0.09), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    var(--studio-panel);
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 
 .studio-admin[hidden],
@@ -2588,6 +2605,7 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   align-content: start;
   gap: 12px;
   overflow: auto;
+  scrollbar-color: rgba(var(--studio-accent-rgb), 0.34) transparent;
 }
 
 .studio-workspace {
@@ -2600,8 +2618,13 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 .studio-overview {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid rgba(236, 235, 227, 0.14);
-  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  border: 1px solid var(--studio-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.046), rgba(255, 255, 255, 0.016)),
+    rgba(255, 255, 255, 0.018);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 
 .studio-overview div {
@@ -2609,7 +2632,7 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   gap: 3px;
   min-width: 0;
   padding: 12px 10px;
-  border-left: 1px solid rgba(236, 235, 227, 0.1);
+  border-left: 1px solid rgba(236, 235, 227, 0.08);
 }
 
 .studio-overview div:first-child {
@@ -2617,7 +2640,7 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 }
 
 .studio-overview b {
-  color: var(--ink);
+  color: var(--studio-ink);
   font-size: 20px;
   line-height: 1;
 }
@@ -2634,25 +2657,47 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 
 .studio-album-nav {
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(236, 235, 227, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
 }
 
 .studio-album-nav button {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
-  border: 1px solid rgba(236, 235, 227, 0.13);
-  background: rgba(255, 255, 255, 0.02);
-  color: rgba(var(--text-rgb), 0.72);
+  min-height: 40px;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(var(--text-rgb), 0.66);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
   font-weight: 700;
   line-height: 1.2;
-  padding: 0 10px;
+  padding: 0 10px 0 14px;
   text-align: left;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.studio-album-nav button::before {
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  content: "";
+  transition: background 180ms ease;
 }
 
 .studio-album-nav button span {
@@ -2662,22 +2707,51 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 }
 
 .studio-album-nav button b {
-  color: rgba(var(--text-rgb), 0.44);
+  display: inline-grid;
+  min-width: 24px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(var(--text-rgb), 0.46);
   font-size: 11px;
 }
 
+.studio-album-nav button:hover {
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(var(--text-rgb), 0.9);
+}
+
 .studio-album-nav button.is-active {
-  border-color: rgba(var(--text-rgb), 0.34);
-  background: rgba(var(--text-rgb), 0.11);
-  color: var(--ink);
+  border-color: rgba(var(--studio-accent-rgb), 0.38);
+  background:
+    linear-gradient(90deg, rgba(var(--studio-accent-rgb), 0.2), rgba(var(--studio-accent-rgb), 0.06)),
+    rgba(255, 255, 255, 0.045);
+  color: var(--studio-ink);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065);
+}
+
+.studio-album-nav button.is-active::before {
+  background: var(--studio-accent);
+}
+
+.studio-album-nav button.is-active b {
+  background: rgba(var(--studio-accent-rgb), 0.18);
+  color: var(--studio-ink);
 }
 
 .studio-workspace-head,
 .studio-upload-panel,
 .studio-create-group,
 .studio-group-card {
-  border: 1px solid rgba(236, 235, 227, 0.14);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--studio-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.014)),
+    rgba(255, 255, 255, 0.022);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .studio-workspace-head {
@@ -2702,7 +2776,7 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 
 .studio-workspace-head h3 {
   margin-top: 3px;
-  color: var(--gold);
+  color: var(--studio-ink);
   font-size: clamp(20px, 2vw, 28px);
   line-height: 1.08;
 }
@@ -2712,6 +2786,9 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
   gap: 14px;
   padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(var(--studio-accent-rgb), 0.07), transparent 52%),
+    rgba(255, 255, 255, 0.024);
 }
 
 .studio-upload-panel p,
@@ -2789,19 +2866,37 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
+  scrollbar-color: rgba(var(--studio-accent-rgb), 0.34) transparent;
 }
 
 .studio-photo-card {
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid rgba(236, 235, 227, 0.16);
-  background: rgba(255, 255, 255, 0.026);
+  border: 1px solid var(--studio-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012)),
+    rgba(255, 255, 255, 0.02);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    transform 180ms ease;
+}
+
+.studio-photo-card:hover {
+  border-color: rgba(var(--studio-accent-rgb), 0.26);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.048), rgba(255, 255, 255, 0.016)),
+    rgba(255, 255, 255, 0.026);
+  transform: translateY(-1px);
 }
 
 .studio-photo-preview {
   position: relative;
   overflow: hidden;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -2825,6 +2920,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 .studio-photo-badges span,
 .studio-card-heading span {
   min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
   background: rgba(10, 10, 9, 0.72);
   color: rgba(var(--text-rgb), 0.76);
   font-size: 10px;
@@ -2881,14 +2978,41 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 .studio-admin textarea {
   width: 100%;
   min-height: 42px;
-  border: 1px solid rgba(236, 235, 227, 0.2);
-  border-radius: 0;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--ink);
+  border: 1px solid rgba(236, 235, 227, 0.14);
+  border-radius: 6px;
+  background: rgba(5, 6, 5, 0.36);
+  color: var(--studio-ink);
   padding: 9px 11px;
   font: inherit;
   font-weight: 500;
   line-height: 1.25;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.studio-admin select {
+  appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(var(--text-rgb), 0.72) 50%),
+    linear-gradient(135deg, rgba(var(--text-rgb), 0.72) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 17px,
+    calc(100% - 12px) 17px;
+  background-repeat: no-repeat;
+  background-size: 6px 6px, 6px 6px;
+}
+
+.studio-form input:focus,
+.studio-admin input:focus,
+.studio-admin select:focus,
+.studio-admin textarea:focus {
+  border-color: rgba(var(--studio-accent-rgb), 0.5);
+  outline: 0;
+  background-color: rgba(255, 255, 255, 0.055);
+  box-shadow: 0 0 0 3px rgba(var(--studio-accent-rgb), 0.11);
 }
 
 .studio-admin textarea {
@@ -2918,27 +3042,83 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 .studio-form button,
 .studio-admin button {
   min-height: 42px;
-  border: 1px solid var(--gold);
-  background: var(--gold);
-  color: #14110b;
+  border: 1px solid rgba(var(--studio-accent-rgb), 0.78);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent),
+    var(--studio-accent);
+  color: #15130e;
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
   padding: 0 16px;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
 }
 
 .studio-form button[type="button"],
 .studio-admin button[type="button"] {
   min-width: 74px;
-  background: transparent;
-  color: var(--gold);
+  border-color: rgba(236, 235, 227, 0.16);
+  background: rgba(255, 255, 255, 0.026);
+  color: rgba(var(--text-rgb), 0.86);
+  box-shadow: none;
+}
+
+.studio-form button:hover,
+.studio-admin button:hover {
+  transform: translateY(-1px);
+}
+
+.studio-form button[type="button"]:hover,
+.studio-admin button[type="button"]:hover {
+  border-color: rgba(var(--studio-accent-rgb), 0.34);
+  background: rgba(var(--studio-accent-rgb), 0.08);
+  color: var(--studio-ink);
 }
 
 .studio-admin button[data-admin-delete-photo],
 .studio-admin button[data-admin-delete-group] {
-  border-color: rgba(236, 235, 227, 0.22);
-  color: rgba(var(--text-rgb), 0.72);
+  border-color: rgba(236, 235, 227, 0.14);
+  color: rgba(var(--text-rgb), 0.66);
+}
+
+.studio-admin .studio-album-nav button {
+  min-width: 0;
+  border-color: transparent;
+  background: transparent;
+  color: rgba(var(--text-rgb), 0.66);
+  box-shadow: none;
+}
+
+.studio-admin .studio-album-nav button:hover {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(var(--text-rgb), 0.9);
+  transform: none;
+}
+
+.studio-admin .studio-album-nav button.is-active {
+  border-color: rgba(var(--studio-accent-rgb), 0.38);
+  background:
+    linear-gradient(90deg, rgba(var(--studio-accent-rgb), 0.2), rgba(var(--studio-accent-rgb), 0.06)),
+    rgba(255, 255, 255, 0.045);
+  color: var(--studio-ink);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065);
+}
+
+.studio-admin .studio-album-nav button.is-active b {
+  background: rgba(var(--studio-accent-rgb), 0.18);
+  color: var(--studio-ink);
 }
 
 .studio-admin input[type="file"] {
@@ -2949,8 +3129,9 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   min-height: 28px;
   margin-right: 10px;
   border: 0;
-  background: rgba(var(--text-rgb), 0.22);
-  color: var(--ink);
+  border-radius: 5px;
+  background: rgba(var(--studio-accent-rgb), 0.18);
+  color: var(--studio-ink);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -2961,6 +3142,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   grid-column: 1 / -1;
   margin: 0;
   border: 1px dashed rgba(236, 235, 227, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.018);
   color: rgba(var(--text-rgb), 0.56);
   font-size: 13px;
   font-weight: 500;
@@ -2975,6 +3158,7 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 .studio-admin button:disabled {
   cursor: wait;
   opacity: 0.56;
+  transform: none;
 }
 
 .studio-form.is-uploading,
