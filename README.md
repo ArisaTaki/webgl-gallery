@@ -81,14 +81,16 @@ docker compose up -d --build
 docker compose -f docker-compose.image.yml up -d
 ```
 
-首次在交互式终端安装时，脚本会先询问图片存储方式：
+首次安装如果没有预置 R2 配置，脚本会默认使用本地图片存储，后续仍可在 `/setup` 切换到 R2：
 
 - `Local folder on this server`: 图片派生图保存在服务器本地 `public/media/`，只启动 gallery 应用容器。
-- `Cloudflare R2`: 脚本会继续询问 `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、公开/私有 bucket 和公开图片域名，并写入 `.env`。
+- `Cloudflare R2`: 设置 `WEBGL_GALLERY_STORAGE_MODE=r2` 并预置 `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、公开/私有 bucket 和公开图片域名时，脚本会直接使用 R2。
+
+如果仍想让安装器在终端里询问 Local/R2，可以设置 `WEBGL_GALLERY_INTERACTIVE=1`。
 
 如果输入 `CLOUDFLARE_TUNNEL_TOKEN`，脚本还会同时启动 `cloudflared` 容器，把 `gallery.irop.one` 转发到应用容器；不输入 token 时只启动应用容器。
 
-无人值守部署可以直接用环境变量跳过提问：
+无人值守部署可以直接用环境变量明确存储方式：
 
 ```bash
 WEBGL_GALLERY_STORAGE_MODE=local sh install.sh

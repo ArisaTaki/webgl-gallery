@@ -251,7 +251,7 @@ configure_storage_profile() {
   if [ -z "$STORAGE_MODE" ] && r2_env_configured; then
     STORAGE_MODE="r2"
   fi
-  if [ -z "$STORAGE_MODE" ] && should_prompt_install "$had_env"; then
+  if [ -z "$STORAGE_MODE" ] && [ "${WEBGL_GALLERY_INTERACTIVE:-auto}" != "auto" ] && should_prompt_install "$had_env"; then
     prompt_storage_mode
   fi
   STORAGE_MODE="${STORAGE_MODE:-local}"
