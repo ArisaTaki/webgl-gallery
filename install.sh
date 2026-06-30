@@ -10,6 +10,7 @@ REPO_URL="${WEBGL_GALLERY_REPO_URL:-${WEBGL_GALLERY_REPO:-}}"
 BRANCH="${WEBGL_GALLERY_BRANCH:-main}"
 HOSTNAME="${WEBGL_GALLERY_HOSTNAME:-gallery.irop.one}"
 IMAGE_MODE="${WEBGL_GALLERY_IMAGE_MODE:-build}"
+STORAGE_MODE="${WEBGL_GALLERY_STORAGE_MODE:-}"
 
 if [ "${WEBGL_GALLERY_UPDATE:-}" = "1" ]; then
   ACTION="update"
@@ -100,10 +101,16 @@ copy_project() {
 }
 
 prepare_env() {
-  [ -f .env ] || cp .env.example .env
+  had_env=0
+  if [ -f .env ]; then
+    had_env=1
+  else
+    cp .env.example .env
+  fi
   mkdir -p .gallery .uploads public/data public/media
   HOSTNAME="${WEBGL_GALLERY_HOSTNAME:-$(env_value WEBGL_GALLERY_HOSTNAME "$HOSTNAME")}"
   IMAGE_MODE="${WEBGL_GALLERY_IMAGE_MODE:-$(env_value WEBGL_GALLERY_IMAGE_MODE "$IMAGE_MODE")}"
+  STORAGE_MODE="${WEBGL_GALLERY_STORAGE_MODE:-$(env_value WEBGL_GALLERY_STORAGE_MODE "$STORAGE_MODE")}"
   WEBGL_GALLERY_PORT="${WEBGL_GALLERY_PORT:-$(env_value WEBGL_GALLERY_PORT 5279)}"
   WEBGL_GALLERY_COMPOSE_PROJECT="${WEBGL_GALLERY_COMPOSE_PROJECT:-$(env_value WEBGL_GALLERY_COMPOSE_PROJECT webgl-gallery)}"
   WEBGL_GALLERY_IMAGE="${WEBGL_GALLERY_IMAGE:-$(env_value WEBGL_GALLERY_IMAGE)}"
@@ -112,6 +119,8 @@ prepare_env() {
   set_env WEBGL_GALLERY_PORT "$WEBGL_GALLERY_PORT"
   set_env WEBGL_GALLERY_IMAGE_MODE "$IMAGE_MODE"
   set_env WEBGL_GALLERY_IMAGE "$WEBGL_GALLERY_IMAGE"
+  configure_storage_profile "$had_env"
+  configure_tunnel_profile "$had_env"
   set_env CLOUDFLARE_TUNNEL_TOKEN "${CLOUDFLARE_TUNNEL_TOKEN:-}"
 }
 
@@ -141,6 +150,183 @@ set_env() {
     mv .env.tmp .env
   fi
   printf '%s=%s\n' "$key" "$value" >> .env
+}
+
+unset_env() {
+  key="$1"
+  if [ -f .env ]; then
+    grep -v "^$key=" .env > .env.tmp 2>/dev/null || true
+    mv .env.tmp .env
+  fi
+}
+
+tty_available() {
+  [ -c /dev/tty ] && ( : < /dev/tty ) >/dev/null 2>&1 && ( : > /dev/tty ) >/dev/null 2>&1
+}
+
+should_prompt_install() {
+  had_env="$1"
+  case "${WEBGL_GALLERY_INTERACTIVE:-auto}" in
+    0|false|no) return 1 ;;
+    1|true|yes) tty_available ;;
+    *) [ "$ACTION" = "install" ] && [ "$had_env" = "0" ] && tty_available ;;
+  esac
+}
+
+tty_log() {
+  if tty_available; then
+    printf '%s\n' "$*" > /dev/tty
+  else
+    log "$*"
+  fi
+}
+
+prompt_value() {
+  label="$1"
+  default="${2:-}"
+  required="${3:-0}"
+  while :; do
+    if [ -n "$default" ]; then
+      printf '%s [%s]: ' "$label" "$default" > /dev/tty
+    else
+      printf '%s: ' "$label" > /dev/tty
+    fi
+    IFS= read -r PROMPT_VALUE < /dev/tty || PROMPT_VALUE=""
+    [ -n "$PROMPT_VALUE" ] || PROMPT_VALUE="$default"
+    if [ "$required" != "1" ] || [ -n "$PROMPT_VALUE" ]; then
+      return 0
+    fi
+    tty_log "This value is required."
+  done
+}
+
+prompt_secret_value() {
+  label="$1"
+  default="${2:-}"
+  required="${3:-0}"
+  while :; do
+    if [ -n "$default" ]; then
+      printf '%s [already set, press Enter to keep]: ' "$label" > /dev/tty
+    else
+      printf '%s: ' "$label" > /dev/tty
+    fi
+    if command -v stty >/dev/null 2>&1; then
+      old_stty="$(stty -g < /dev/tty 2>/dev/null || true)"
+      stty -echo < /dev/tty 2>/dev/null || true
+      IFS= read -r PROMPT_VALUE < /dev/tty || PROMPT_VALUE=""
+      [ -z "$old_stty" ] || stty "$old_stty" < /dev/tty 2>/dev/null || true
+      printf '\n' > /dev/tty
+    else
+      IFS= read -r PROMPT_VALUE < /dev/tty || PROMPT_VALUE=""
+    fi
+    [ -n "$PROMPT_VALUE" ] || PROMPT_VALUE="$default"
+    if [ "$required" != "1" ] || [ -n "$PROMPT_VALUE" ]; then
+      return 0
+    fi
+    tty_log "This value is required."
+  done
+}
+
+prompt_storage_mode() {
+  while :; do
+    tty_log ""
+    tty_log "Choose image storage:"
+    tty_log "  1) Local folder on this server"
+    tty_log "  2) Cloudflare R2"
+    prompt_value "Storage mode" "1" "1"
+    case "$PROMPT_VALUE" in
+      1|local|Local|LOCAL) STORAGE_MODE="local"; return 0 ;;
+      2|r2|R2) STORAGE_MODE="r2"; return 0 ;;
+      *) tty_log "Please enter 1 for local or 2 for R2." ;;
+    esac
+  done
+}
+
+configure_storage_profile() {
+  had_env="$1"
+  if [ -z "$STORAGE_MODE" ] && r2_env_configured; then
+    STORAGE_MODE="r2"
+  fi
+  if [ -z "$STORAGE_MODE" ] && should_prompt_install "$had_env"; then
+    prompt_storage_mode
+  fi
+  STORAGE_MODE="${STORAGE_MODE:-local}"
+  case "$STORAGE_MODE" in
+    local)
+      set_env WEBGL_GALLERY_STORAGE_MODE local
+      clear_r2_env
+      ;;
+    r2)
+      set_env WEBGL_GALLERY_STORAGE_MODE r2
+      configure_r2_env "$had_env"
+      ;;
+    *)
+      fail "Unknown WEBGL_GALLERY_STORAGE_MODE: $STORAGE_MODE. Use local or r2."
+      ;;
+  esac
+}
+
+clear_r2_env() {
+  unset R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_PUBLIC_BUCKET R2_PRIVATE_BUCKET R2_PUBLIC_BASE_URL
+  unset_env R2_ACCOUNT_ID
+  unset_env R2_ACCESS_KEY_ID
+  unset_env R2_SECRET_ACCESS_KEY
+  unset_env R2_PUBLIC_BUCKET
+  unset_env R2_PRIVATE_BUCKET
+  unset_env R2_PUBLIC_BASE_URL
+}
+
+configure_r2_env() {
+  had_env="$1"
+  configure_required_env R2_ACCOUNT_ID "Cloudflare Account ID" plain "$had_env"
+  configure_required_env R2_ACCESS_KEY_ID "R2 Access Key ID" secret "$had_env"
+  configure_required_env R2_SECRET_ACCESS_KEY "R2 Secret Access Key" secret "$had_env"
+  configure_required_env R2_PUBLIC_BUCKET "R2 public bucket" plain "$had_env"
+  configure_required_env R2_PRIVATE_BUCKET "R2 private bucket" plain "$had_env"
+  configure_required_env R2_PUBLIC_BASE_URL "R2 public base URL" plain "$had_env"
+}
+
+configure_required_env() {
+  key="$1"
+  label="$2"
+  kind="$3"
+  had_env="$4"
+  eval "current_value=\"\${$key:-}\""
+  [ -n "$current_value" ] || current_value="$(env_value "$key")"
+  if [ -z "$current_value" ] && should_prompt_install "$had_env"; then
+    if [ "$kind" = "secret" ]; then
+      prompt_secret_value "$label" "" "1"
+    else
+      prompt_value "$label" "" "1"
+    fi
+    current_value="$PROMPT_VALUE"
+  fi
+  [ -n "$current_value" ] || fail "$key is required when WEBGL_GALLERY_STORAGE_MODE=r2."
+  set_env "$key" "$current_value"
+}
+
+r2_env_configured() {
+  for key in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_PUBLIC_BUCKET R2_PRIVATE_BUCKET R2_PUBLIC_BASE_URL; do
+    eval "value=\"\${$key:-}\""
+    [ -n "$value" ] || value="$(env_value "$key")"
+    [ -n "$value" ] || return 1
+  done
+  return 0
+}
+
+configure_tunnel_profile() {
+  had_env="$1"
+  current_token="${CLOUDFLARE_TUNNEL_TOKEN:-$(env_value CLOUDFLARE_TUNNEL_TOKEN)}"
+  if [ -z "$current_token" ] && should_prompt_install "$had_env"; then
+    prompt_value "Expose with Cloudflare Tunnel? (y/N)" "N" "0"
+    case "$PROMPT_VALUE" in
+      y|Y|yes|YES)
+        prompt_secret_value "CLOUDFLARE_TUNNEL_TOKEN" "" "1"
+        current_token="$PROMPT_VALUE"
+        ;;
+    esac
+  fi
+  CLOUDFLARE_TUNNEL_TOKEN="$current_token"
 }
 
 start_docker() {
@@ -218,6 +404,7 @@ wait_for_gallery() {
 start_node() {
   need_cmd node
   need_cmd npm
+  prepare_env
   node scripts/bootstrap.mjs
 }
 

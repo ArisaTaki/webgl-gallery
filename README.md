@@ -81,6 +81,33 @@ docker compose up -d --build
 docker compose -f docker-compose.image.yml up -d
 ```
 
+首次在交互式终端安装时，脚本会先询问图片存储方式：
+
+- `Local folder on this server`: 图片派生图保存在服务器本地 `public/media/`，只启动 gallery 应用容器。
+- `Cloudflare R2`: 脚本会继续询问 `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、公开/私有 bucket 和公开图片域名，并写入 `.env`。
+
+如果输入 `CLOUDFLARE_TUNNEL_TOKEN`，脚本还会同时启动 `cloudflared` 容器，把 `gallery.irop.one` 转发到应用容器；不输入 token 时只启动应用容器。
+
+无人值守部署可以直接用环境变量跳过提问：
+
+```bash
+WEBGL_GALLERY_STORAGE_MODE=local sh install.sh
+```
+
+或：
+
+```bash
+WEBGL_GALLERY_STORAGE_MODE=r2 \
+R2_ACCOUNT_ID="..." \
+R2_ACCESS_KEY_ID="..." \
+R2_SECRET_ACCESS_KEY="..." \
+R2_PUBLIC_BUCKET="gallery-public" \
+R2_PRIVATE_BUCKET="gallery-private" \
+R2_PUBLIC_BASE_URL="https://media.example.com" \
+CLOUDFLARE_TUNNEL_TOKEN="..." \
+sh install.sh
+```
+
 如果服务器已经部署过，可以用更新模式刷新代码并重启 Docker。`.env`、`.gallery` 和 `.uploads` 会保留：
 
 ```bash
