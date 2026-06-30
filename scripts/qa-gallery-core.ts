@@ -49,6 +49,7 @@ try {
   assert.equal(publicPhoto.group, 'default');
   assert.equal(publicPhoto.description, 'Tiny hands');
   assert.equal(publicPhoto.thumb, 'https://cdn.example/thumb.webp');
+  assert.equal(publicPhoto.canReprocess, false);
 
   const inputPath = path.join(tempRoot, 'sample.svg');
   await writeFile(
@@ -63,6 +64,7 @@ try {
   });
   assert.equal(processed.photo.width, 2400);
   assert.equal(processed.photo.height, 1600);
+  assert.deepEqual(processed.assets.map((asset) => asset.kind).sort(), ['large', 'medium', 'thumb']);
   assert.equal(processed.assets.find((asset) => asset.kind === 'thumb')?.width, 520);
   assert.equal(processed.assets.find((asset) => asset.kind === 'medium')?.width, 1280);
   assert.equal(processed.assets.find((asset) => asset.kind === 'large')?.width, 2200);
@@ -161,7 +163,7 @@ try {
     }
   }
 
-  console.log(JSON.stringify({ ok: true, tests: 18 }, null, 2));
+  console.log(JSON.stringify({ ok: true, tests: 20 }, null, 2));
 } finally {
   await rm(tempRoot, { force: true, recursive: true }).catch(() => {});
 }

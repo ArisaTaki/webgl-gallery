@@ -81,6 +81,18 @@ docker compose up -d --build
 docker compose -f docker-compose.image.yml up -d
 ```
 
+如果服务器已经部署过，可以用更新模式刷新代码并重启 Docker。`.env`、`.gallery` 和 `.uploads` 会保留：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ArisaTaki/webgl-gallery/main/install.sh | \
+  NIAN_GALLERY_ACTION=update \
+  NIAN_GALLERY_SOURCE_URL=https://github.com/ArisaTaki/webgl-gallery/archive/refs/heads/main.tar.gz \
+  NIAN_GALLERY_IMAGE_MODE=prebuilt \
+  NIAN_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest sh
+```
+
+GitHub `main` 分支有新 push 时，Release workflow 会跑完整校验并刷新 GHCR 的 `latest`、`main` 和 `sha-*` 镜像标签；推送 `v*` tag 时仍然会生成正式 GitHub Release 和安装包附件。
+
 如果需要走 Node 本地模式，可以设置：
 
 ```bash
@@ -115,16 +127,16 @@ SQLite 不需要用户额外安装系统 SQLite；项目优先使用 Node.js 自
 - `.gallery/gallery.sqlite`: 本地 SQL 元数据
 - `public/data/photos.json`: JSON 兼容模式元数据
 - `public/media/`: 公开缩略图和 WebP 派生图
-- `.uploads/originals/`: 本地原图备份
+- `.uploads/originals/`: 旧版本原图兼容目录，新上传不会再保存原图
 
 ## 图片存储怎么选
 
-普通本机使用选 `Local folder`。项目会把可公开展示的 `thumb/medium/large` WebP 图片放进 `public/media/`，把后台重建缩略图需要用到的原图放进 `.uploads/originals/`。这两个路径都可以在 `/setup` 或 `npm run setup` 里改成你自己的文件夹。
+普通本机使用选 `Local folder`。项目只会持久化可公开展示的 `thumb/medium/large` WebP 图片，放进 `public/media/`；上传时的临时原图处理完成后会删除，不再额外备份一份原图。`/setup` 里保留的原图目录字段用于旧数据兼容和迁移，新上传不会写入。
 
 部署到公网或多台机器访问时选 `Cloudflare R2`。推荐两个 bucket：
 
 - 公开 bucket：保存 `thumb/medium/large` 展示图，绑定公开域名，例如 `https://media.example.com`
-- 私有 bucket：保存 `original` 原图，不开启公开访问
+- 私有 bucket：旧版本原图兼容和迁移使用，不开启公开访问；新上传不会写入 `original`
 
 R2 配置保存时会做一次实际检查：向公开 bucket 和私有 bucket 临时写入 `_setup-check` 对象，读取成功后删除，并通过公开域名确认展示图能被浏览器访问。检查失败时，通常是 token 权限、bucket 名称、公开域名或 CORS 没配好。
 
@@ -168,7 +180,7 @@ R2_PUBLIC_BASE_URL="https://cdn.example.com"
 npm run db:migrate
 ```
 
-`R2_PUBLIC_BUCKET` 保存公开的 `thumb/medium/large` WebP 派生图；`R2_PRIVATE_BUCKET` 保存原图，用于后台重新生成缩略图。没有配置 `DATABASE_URL` 时，应用默认使用本地 SQLite。第一次切到 SQLite 时，如果发现旧的 `public/data/photos.json`，会自动把旧照片清单导入本地 SQL。
+`R2_PUBLIC_BUCKET` 保存公开的 `thumb/medium/large` WebP 派生图；`R2_PRIVATE_BUCKET` 仅用于旧版本原图记录或迁移兼容，新上传不会再保存原图。没有配置 `DATABASE_URL` 时，应用默认使用本地 SQLite。第一次切到 SQLite 时，如果发现旧的 `public/data/photos.json`，会自动把旧照片清单导入本地 SQL。
 
 R2 公开 bucket 需要允许浏览器读取图片。推荐 CORS：
 

@@ -34,13 +34,13 @@ try {
   payload.storageKind = await choose('图片文件保存在哪里', storageChoices(), status.storage.kind || 'local');
   if (payload.storageKind === 'local') {
     payload.mediaDir = await askPath('公开图片目录 thumb/medium/large', status.storage.mediaDir || paths.mediaDir);
-    payload.originalDir = await askPath('私有原图备份目录 original', status.storage.originalDir || paths.originalDir);
+    payload.originalDir = await askPath('旧版原图兼容目录（新上传不会写入）', status.storage.originalDir || paths.originalDir);
   } else {
     payload.r2AccountId = await askValue('Cloudflare Account ID', status.storage.accountId || runtime.config.storage?.r2?.accountId || process.env.R2_ACCOUNT_ID || '', true);
     payload.r2AccessKeyId = await askSecretValue('R2 Access Key ID', runtime.config.storage?.r2?.accessKeyId || process.env.R2_ACCESS_KEY_ID || '', true);
     payload.r2SecretAccessKey = await askSecretValue('R2 Secret Access Key', runtime.config.storage?.r2?.secretAccessKey || process.env.R2_SECRET_ACCESS_KEY || '', true);
     payload.r2PublicBucket = await askValue('公开 bucket（缩略图/展示图）', status.storage.publicBucket || runtime.config.storage?.r2?.publicBucket || process.env.R2_PUBLIC_BUCKET || '', true);
-    payload.r2PrivateBucket = await askValue('私有 bucket（原图）', status.storage.privateBucket || runtime.config.storage?.r2?.privateBucket || process.env.R2_PRIVATE_BUCKET || '', true);
+    payload.r2PrivateBucket = await askValue('旧版私有 bucket（新上传不会写入原图）', status.storage.privateBucket || runtime.config.storage?.r2?.privateBucket || process.env.R2_PRIVATE_BUCKET || '', true);
     payload.r2PublicBaseUrl = await askValue('公开图片域名', status.storage.publicBaseUrl || runtime.config.storage?.r2?.publicBaseUrl || process.env.R2_PUBLIC_BASE_URL || '', true);
   }
 
@@ -90,7 +90,7 @@ function databaseChoices(currentStatus) {
 function storageChoices() {
   return [
     { value: 'local', label: 'Local folder（推荐，图片存在本机文件夹）' },
-    { value: 'r2', label: 'Cloudflare R2（公开展示图 + 私有原图）' },
+    { value: 'r2', label: 'Cloudflare R2（公开展示图，兼容旧版私有原图）' },
   ];
 }
 

@@ -93,10 +93,10 @@ const SETUP_COPY = {
     localSqlite: 'Local SQLite',
     metadata: 'Metadata',
     ok: 'OK',
-    originalDir: 'Originals dir',
+    originalDir: 'Legacy originals dir',
     postgres: 'Postgres',
     postgresCheck: 'Postgres metadata',
-    privateBucket: 'Private bucket',
+    privateBucket: 'Legacy private bucket',
     publicBaseUrl: 'Public base URL',
     publicBucket: 'Public bucket',
     publicMediaDir: 'Public media dir',
@@ -142,10 +142,10 @@ const SETUP_COPY = {
     localSqlite: '本地 SQLite',
     metadata: '元数据',
     ok: '正常',
-    originalDir: '原图目录',
+    originalDir: '旧版原图兼容目录',
     postgres: 'Postgres',
     postgresCheck: 'Postgres 元数据',
-    privateBucket: '私有 bucket',
+    privateBucket: '旧版私有 bucket',
     publicBaseUrl: '公开访问地址',
     publicBucket: '公开 bucket',
     publicMediaDir: '公开图片目录',
@@ -2108,7 +2108,11 @@ function renderStudioAdmin() {
       </div>
     </form>
   `).join('');
-  const photoCards = photos.map((photo) => `
+  const photoCards = photos.map((photo) => {
+    const reprocessButton = photo.canReprocess
+      ? `<button type="button" data-admin-reprocess-photo="${escapeHtml(photo.id)}">重建缩略图</button>`
+      : '';
+    return `
     <form class="studio-photo-form studio-photo-card" data-photo-id="${escapeHtml(photo.id)}">
       <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
       <label class="studio-field">
@@ -2144,11 +2148,12 @@ function renderStudioAdmin() {
       </div>
       <div class="studio-card-actions">
         <button type="submit">保存</button>
-        <button type="button" data-admin-reprocess-photo="${escapeHtml(photo.id)}">重建缩略图</button>
+        ${reprocessButton}
         <button type="button" data-admin-delete-photo="${escapeHtml(photo.id)}">删除</button>
       </div>
     </form>
-  `).join('');
+  `;
+  }).join('');
 
   galleryEls.studioAdminBody.innerHTML = `
     <div class="studio-admin-grid">

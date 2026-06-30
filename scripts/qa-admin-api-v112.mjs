@@ -103,7 +103,7 @@ try {
     headers: { 'Content-Type': 'application/json' },
     method: 'PATCH',
   });
-  const reprocess = await adminJson(cookie, `/api/admin/photos/${photo.id}/reprocess`, { method: 'POST' });
+  const reprocess = await adminRequest(cookie, `/api/admin/photos/${photo.id}/reprocess`, { method: 'POST' });
   const publicGallery = await fetchJson('/api/gallery?group=family-days');
   const variants = await inspectVariants(publicGallery.photos[0]);
   const deleted = await adminJson(cookie, `/api/admin/photos/${photo.id}`, { method: 'DELETE' });
@@ -115,8 +115,11 @@ try {
   if (!loginBody.ok || !cookie) failures.push(`Expected login cookie, got body=${JSON.stringify(loginBody)} cookie=${cookie}.`);
   if (groupCreate.group.slug !== 'family-days') failures.push(`Expected group slug family-days, got ${JSON.stringify(groupCreate)}.`);
   if (upload.count !== 1 || upload.photos[0]?.group !== 'family-days') failures.push(`Expected uploaded public photo in family-days, got ${JSON.stringify(upload)}.`);
+  if (upload.photos[0]?.canReprocess !== false) failures.push(`Expected new uploads to omit original assets, got ${JSON.stringify(upload.photos[0])}.`);
   if (patch.photo.title !== 'Morning Light Edited') failures.push(`Expected patched title, got ${JSON.stringify(patch)}.`);
-  if (!reprocess.photo?.blurDataUrl?.startsWith('data:image/webp;base64,')) failures.push('Expected reprocess to refresh photo metadata.');
+  if (reprocess.status !== 409 || !String(reprocess.body?.message || '').includes('Original asset is not available')) {
+    failures.push(`Expected reprocess without an original asset to return 409, got ${JSON.stringify(reprocess)}.`);
+  }
   if (publicGallery.count !== 1 || !publicGallery.groups.some((group) => group.slug === 'family-days')) {
     failures.push(`Expected filtered public gallery count 1 with family-days group, got ${JSON.stringify(publicGallery)}.`);
   }
@@ -186,6 +189,12 @@ async function postJson(pathname, payload) {
 }
 
 async function adminJson(cookie, pathname, options = {}) {
+  const result = await adminRequest(cookie, pathname, options);
+  if (result.status < 200 || result.status >= 300) throw new Error(`${pathname} failed: ${JSON.stringify(result.body)}`);
+  return result.body;
+}
+
+async function adminRequest(cookie, pathname, options = {}) {
   const response = await fetch(`${serverUrl}${pathname}`, {
     ...options,
     headers: {
@@ -194,8 +203,7 @@ async function adminJson(cookie, pathname, options = {}) {
     },
   });
   const body = await response.json();
-  if (!response.ok) throw new Error(`${pathname} failed: ${JSON.stringify(body)}`);
-  return body;
+  return { status: response.status, body };
 }
 
 async function inspectVariants(photo) {

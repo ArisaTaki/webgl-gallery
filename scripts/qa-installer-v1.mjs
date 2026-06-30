@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -52,11 +52,36 @@ try {
   await access(path.join(installDir, 'package.json'));
   await access(path.join(installDir, 'scripts', 'bootstrap.mjs'));
   await access(path.join(installDir, 'install.sh'));
+  await mkdir(path.join(installDir, '.gallery'), { recursive: true });
+  await writeFile(path.join(installDir, '.gallery', 'config.json'), '{"setupComplete":true}\n');
+  await writeFile(path.join(installDir, '.env'), 'NIAN_GALLERY_IMAGE_MODE=prebuilt\nCLOUDFLARE_TUNNEL_TOKEN=test-token\n');
+  await writeFile(path.join(installDir, 'README.md'), 'stale local file\n');
+
+  const update = await run('sh', [path.join(root, 'install.sh')], {
+    cwd: tempRoot,
+    env: {
+      ...process.env,
+      NIAN_GALLERY_ACTION: 'update',
+      NIAN_GALLERY_DIR: installDir,
+      NIAN_GALLERY_INSTALL_MODE: 'node',
+      NIAN_GALLERY_SKIP_INSTALL: '1',
+      NIAN_GALLERY_SKIP_SETUP: '1',
+      NIAN_GALLERY_SKIP_START: '1',
+      NIAN_GALLERY_SOURCE_URL: pathToFileURL(archivePath).href,
+    },
+  });
+  const refreshedReadme = await readFile(path.join(installDir, 'README.md'), 'utf8');
+  const preservedEnv = await readFile(path.join(installDir, '.env'), 'utf8');
+  const preservedConfig = await readFile(path.join(installDir, '.gallery', 'config.json'), 'utf8');
+  if (!refreshedReadme.startsWith('# 念念照片画廊')) throw new Error('Installer update did not refresh project files.');
+  if (!preservedEnv.includes('CLOUDFLARE_TUNNEL_TOKEN=test-token')) throw new Error('Installer update did not preserve .env.');
+  if (!preservedConfig.includes('"setupComplete":true')) throw new Error('Installer update did not preserve .gallery config.');
 
   console.log(JSON.stringify({
     ok: true,
     installDir,
     output: install.stdout.split('\n').filter(Boolean).slice(-8),
+    updateOutput: update.stdout.split('\n').filter(Boolean).slice(-8),
   }, null, 2));
 } finally {
   if (!process.env.KEEP_INSTALLER_QA_TMP) {

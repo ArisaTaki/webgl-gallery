@@ -169,7 +169,7 @@ async function validateRuntimeConfig(config, options: any = {}) {
       const missing = ` Missing: ${missingR2ConfigFields(config.storage).join(', ')}.`;
       throw httpError(400, `R2 storage requires account id, access keys, both buckets, and public base URL.${missing}`);
     }
-    throw httpError(400, 'Local storage requires public media and original backup folders.');
+    throw httpError(400, 'Local storage requires public media and legacy original folders.');
   }
   if (!hasAdminPassword(config)) {
     throw httpError(400, 'Admin password is required.');

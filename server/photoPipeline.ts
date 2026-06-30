@@ -110,8 +110,6 @@ export async function processImage({ inputPath, mediaDir, id, sourceName, title 
 }
 
 export async function buildPhotoDerivatives({ inputPath, id, sourceName, title }) {
-  const originalBuffer = await readFile(inputPath);
-
   const prepared = await prepareSharpInput(inputPath);
   try {
     const source = sharp(prepared.inputPath, { limitInputPixels: false }).rotate();
@@ -123,17 +121,7 @@ export async function buildPhotoDerivatives({ inputPath, id, sourceName, title }
       .toBuffer();
     const color = await sampleColor(source);
 
-    const assets: any[] = [
-      {
-        kind: 'original',
-        fileName: `${id}-original${path.extname(sourceName || inputPath) || '.image'}`,
-        buffer: originalBuffer,
-        width: metadata.width || 1,
-        height: metadata.height || 1,
-        sizeBytes: originalBuffer.byteLength,
-        mimeType: metadata.format ? `image/${metadata.format}` : 'application/octet-stream',
-      },
-    ];
+    const assets: any[] = [];
 
     for (const variant of variants) {
       const fileName = `${id}-${variant.key}.webp`;

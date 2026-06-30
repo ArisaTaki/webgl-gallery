@@ -4,11 +4,16 @@ set -eu
 APP_NAME="nian-gallery"
 INSTALL_DIR="${NIAN_GALLERY_DIR:-$HOME/$APP_NAME}"
 INSTALL_MODE="${NIAN_GALLERY_INSTALL_MODE:-docker}"
+ACTION="${NIAN_GALLERY_ACTION:-install}"
 SOURCE_URL="${NIAN_GALLERY_SOURCE_URL:-${NIAN_GALLERY_SOURCE:-}}"
 REPO_URL="${NIAN_GALLERY_REPO_URL:-${NIAN_GALLERY_REPO:-}}"
 BRANCH="${NIAN_GALLERY_BRANCH:-main}"
 HOSTNAME="${NIAN_GALLERY_HOSTNAME:-gallery.irop.one}"
 IMAGE_MODE="${NIAN_GALLERY_IMAGE_MODE:-build}"
+
+if [ "${NIAN_GALLERY_UPDATE:-}" = "1" ]; then
+  ACTION="update"
+fi
 
 log() {
   printf '%s\n' "$*"
@@ -57,6 +62,20 @@ clone_repo() {
   git clone --depth 1 --branch "$BRANCH" "$repo" "$target"
 }
 
+update_from_repo() {
+  repo="$1"
+  target="$2"
+  need_cmd git
+  if [ -d "$target/.git" ]; then
+    (cd "$target" && git fetch --depth 1 origin "$BRANCH" && git checkout -B "$BRANCH" FETCH_HEAD)
+    return 0
+  fi
+  tmp_dir="$(mktemp -d 2>/dev/null || mktemp -d -t nian-gallery)"
+  git clone --depth 1 --branch "$BRANCH" "$repo" "$tmp_dir/source"
+  copy_project "$tmp_dir/source" "$target"
+  rm -rf "$tmp_dir"
+}
+
 copy_project() {
   from="$1"
   to="$2"
@@ -83,12 +102,34 @@ copy_project() {
 prepare_env() {
   [ -f .env ] || cp .env.example .env
   mkdir -p .gallery .uploads public/data public/media
-  set_env NIAN_GALLERY_COMPOSE_PROJECT "${NIAN_GALLERY_COMPOSE_PROJECT:-nian-gallery}"
+  HOSTNAME="${NIAN_GALLERY_HOSTNAME:-$(env_value NIAN_GALLERY_HOSTNAME "$HOSTNAME")}"
+  IMAGE_MODE="${NIAN_GALLERY_IMAGE_MODE:-$(env_value NIAN_GALLERY_IMAGE_MODE "$IMAGE_MODE")}"
+  NIAN_GALLERY_PORT="${NIAN_GALLERY_PORT:-$(env_value NIAN_GALLERY_PORT 5279)}"
+  NIAN_GALLERY_COMPOSE_PROJECT="${NIAN_GALLERY_COMPOSE_PROJECT:-$(env_value NIAN_GALLERY_COMPOSE_PROJECT nian-gallery)}"
+  NIAN_GALLERY_IMAGE="${NIAN_GALLERY_IMAGE:-$(env_value NIAN_GALLERY_IMAGE)}"
+  set_env NIAN_GALLERY_COMPOSE_PROJECT "$NIAN_GALLERY_COMPOSE_PROJECT"
   set_env NIAN_GALLERY_HOSTNAME "$HOSTNAME"
-  set_env NIAN_GALLERY_PORT "${NIAN_GALLERY_PORT:-5279}"
+  set_env NIAN_GALLERY_PORT "$NIAN_GALLERY_PORT"
   set_env NIAN_GALLERY_IMAGE_MODE "$IMAGE_MODE"
-  set_env NIAN_GALLERY_IMAGE "${NIAN_GALLERY_IMAGE:-}"
+  set_env NIAN_GALLERY_IMAGE "$NIAN_GALLERY_IMAGE"
   set_env CLOUDFLARE_TUNNEL_TOKEN "${CLOUDFLARE_TUNNEL_TOKEN:-}"
+}
+
+env_value() {
+  key="$1"
+  default="${2:-}"
+  if [ -f .env ]; then
+    value="$(grep "^$key=" .env 2>/dev/null | tail -n 1 | sed "s/^$key=//")"
+    if [ -n "$value" ]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  fi
+  printf '%s\n' "$default"
+}
+
+has_tunnel_token() {
+  [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ] || [ -n "$(env_value CLOUDFLARE_TUNNEL_TOKEN)" ]
 }
 
 set_env() {
@@ -113,7 +154,7 @@ start_docker() {
   if [ "$IMAGE_MODE" != "build" ]; then
     fail "Unknown NIAN_GALLERY_IMAGE_MODE: $IMAGE_MODE. Use build or prebuilt."
   fi
-  if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+  if has_tunnel_token; then
     docker compose --profile tunnel up -d --build
     log ""
     log "Nian Gallery is starting at https://$HOSTNAME"
@@ -125,18 +166,19 @@ start_docker() {
     log "  docker compose --profile tunnel up -d"
   fi
   wait_for_gallery
-  if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+  if has_tunnel_token; then
     log "Public URL: https://$HOSTNAME"
   fi
   log "Setup page: http://localhost:${NIAN_GALLERY_PORT:-5279}/setup"
   log "Studio: http://localhost:${NIAN_GALLERY_PORT:-5279}/studio"
+  log "Update later: rerun this installer with NIAN_GALLERY_ACTION=update; .env, .gallery, and .uploads are preserved."
 }
 
 start_docker_prebuilt() {
   [ -f docker-compose.image.yml ] || fail "docker-compose.image.yml is required for NIAN_GALLERY_IMAGE_MODE=prebuilt."
   log "Using prebuilt Docker image: ${NIAN_GALLERY_IMAGE:-ghcr.io/arisataki/webgl-gallery:latest}"
   docker compose -f docker-compose.image.yml pull gallery || log "Image pull was skipped or failed; Docker will use a local image if available."
-  if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+  if has_tunnel_token; then
     docker compose -f docker-compose.image.yml --profile tunnel up -d
     log ""
     log "Nian Gallery is starting at https://$HOSTNAME"
@@ -148,11 +190,12 @@ start_docker_prebuilt() {
     log "  docker compose -f docker-compose.image.yml --profile tunnel up -d"
   fi
   wait_for_gallery
-  if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+  if has_tunnel_token; then
     log "Public URL: https://$HOSTNAME"
   fi
   log "Setup page: http://localhost:${NIAN_GALLERY_PORT:-5279}/setup"
   log "Studio: http://localhost:${NIAN_GALLERY_PORT:-5279}/studio"
+  log "Update later: rerun this installer with NIAN_GALLERY_ACTION=update; .env, .gallery, and .uploads are preserved."
 }
 
 wait_for_gallery() {
@@ -178,7 +221,27 @@ start_node() {
   node scripts/bootstrap.mjs
 }
 
-if is_project_dir "$(pwd)"; then
+case "$ACTION" in
+  install|update) ;;
+  *) fail "Unknown NIAN_GALLERY_ACTION: $ACTION. Use install or update." ;;
+esac
+
+if [ "$ACTION" = "update" ]; then
+  if [ -n "$SOURCE_URL" ]; then
+    log "Updating $APP_NAME from archive into $INSTALL_DIR"
+    download_archive "$SOURCE_URL" "$INSTALL_DIR"
+  elif [ -n "$REPO_URL" ]; then
+    log "Updating $APP_NAME from git into $INSTALL_DIR"
+    update_from_repo "$REPO_URL" "$INSTALL_DIR"
+  elif is_project_dir "$(pwd)"; then
+    INSTALL_DIR="$(pwd)"
+    log "Updating current project directory: $INSTALL_DIR"
+  elif is_project_dir "$INSTALL_DIR"; then
+    log "Updating existing install directory: $INSTALL_DIR"
+  else
+    fail "No existing install found. Set NIAN_GALLERY_SOURCE_URL or NIAN_GALLERY_REPO_URL, or run without NIAN_GALLERY_ACTION=update for a fresh install."
+  fi
+elif is_project_dir "$(pwd)"; then
   INSTALL_DIR="$(pwd)"
   log "Using current project directory: $INSTALL_DIR"
 elif is_project_dir "$INSTALL_DIR"; then

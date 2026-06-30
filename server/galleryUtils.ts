@@ -81,6 +81,7 @@ export function publicPhotoFromRecord({ photo, assets, group }) {
     thumb: assetByKind.get('thumb')?.url || photo.thumb || '',
     medium: assetByKind.get('medium')?.url || photo.medium || '',
     large: assetByKind.get('large')?.url || photo.large || '',
+    canReprocess: assetByKind.has('original'),
     visitUrl: photo.visitUrl || '',
     workMedia: photo.workMedia || [],
     index: photo.index || 1,
