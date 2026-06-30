@@ -13,6 +13,7 @@ services:
       GALLERY_MEDIA_DIR: /app/public/media
       GALLERY_UPLOAD_DIR: /app/.uploads/tmp
       GALLERY_ORIGINAL_DIR: /app/.uploads/originals
+      GALLERY_SESSION_COOKIE_SECURE: ${GALLERY_SESSION_COOKIE_SECURE:-}
       DATABASE_URL: ${DATABASE_URL:-}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}

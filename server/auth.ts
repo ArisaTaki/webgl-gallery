@@ -27,7 +27,7 @@ export function createPasswordHash(password, salt = crypto.randomBytes(16).toStr
   return `scrypt:${salt}:${crypto.scryptSync(String(password), salt, 64).toString('hex')}`;
 }
 
-export function createAdminSessionCookie() {
+export function createAdminSessionCookie(request = null) {
   const issuedAt = String(Date.now());
   const signature = signSession(issuedAt);
   return stringifySetCookie({
@@ -37,11 +37,11 @@ export function createAdminSessionCookie() {
     maxAge: SESSION_MAX_AGE_SECONDS,
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookie(request),
   });
 }
 
-export function clearAdminSessionCookie() {
+export function clearAdminSessionCookie(request = null) {
   return stringifySetCookie({
     name: SESSION_COOKIE,
     value: '',
@@ -49,7 +49,7 @@ export function clearAdminSessionCookie() {
     maxAge: 0,
     path: '/',
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureCookie(request),
   });
 }
 
@@ -76,6 +76,24 @@ export function requireAdmin(request, response, next) {
 function signSession(issuedAt) {
   const secret = process.env.SESSION_SECRET || process.env.GALLERY_UPLOAD_KEY || 'dev-gallery-session-secret';
   return crypto.createHmac('sha256', secret).update(String(issuedAt)).digest('hex');
+}
+
+function shouldUseSecureCookie(request) {
+  const override = process.env.GALLERY_SESSION_COOKIE_SECURE || process.env.SESSION_COOKIE_SECURE;
+  if (override) return ['1', 'true', 'yes', 'on'].includes(String(override).trim().toLowerCase());
+  if (!request) return process.env.NODE_ENV === 'production';
+  if (request.secure) return true;
+  const forwardedProto = headerValue(request, 'x-forwarded-proto').split(',')[0]?.trim().toLowerCase();
+  if (forwardedProto === 'https') return true;
+  const forwarded = headerValue(request, 'forwarded').toLowerCase();
+  if (/(^|[;,]\s*)proto=https($|[;,])/.test(forwarded)) return true;
+  const cfVisitor = headerValue(request, 'cf-visitor');
+  return /"scheme"\s*:\s*"https"/i.test(cfVisitor);
+}
+
+function headerValue(request, name) {
+  const value = request?.headers?.[name];
+  return Array.isArray(value) ? value.join(',') : String(value || '');
 }
 
 function timingSafeStringEqual(a, b) {

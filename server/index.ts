@@ -85,12 +85,12 @@ app.post('/api/admin/login', (request, response) => {
     response.status(401).json({ ok: false, message: 'Invalid password.' });
     return;
   }
-  response.setHeader('Set-Cookie', createAdminSessionCookie());
+  response.setHeader('Set-Cookie', createAdminSessionCookie(request));
   response.json({ ok: true, authenticated: true });
 });
 
-app.post('/api/admin/logout', (_request, response) => {
-  response.setHeader('Set-Cookie', clearAdminSessionCookie());
+app.post('/api/admin/logout', (request, response) => {
+  response.setHeader('Set-Cookie', clearAdminSessionCookie(request));
   response.json({ ok: true, authenticated: false });
 });
 

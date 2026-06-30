@@ -77,8 +77,19 @@ try {
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   });
-  const cookie = rightLogin.headers.get('set-cookie')?.split(';')[0] || '';
+  const loginSetCookie = rightLogin.headers.get('set-cookie') || '';
+  const cookie = loginSetCookie.split(';')[0] || '';
   const loginBody = await rightLogin.json();
+  const proxiedLogin = await fetch(`${serverUrl}/api/admin/login`, {
+    body: JSON.stringify({ password: ADMIN_PASSWORD }),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Forwarded-Proto': 'https',
+    },
+    method: 'POST',
+  });
+  const proxiedSetCookie = proxiedLogin.headers.get('set-cookie') || '';
+  await proxiedLogin.json();
 
   const groupCreate = await adminJson(cookie, '/api/admin/groups', {
     body: JSON.stringify({ title: 'Family Days', slug: 'family-days', description: 'Shared album' }),
@@ -113,6 +124,8 @@ try {
   if (sessionBefore.authenticated !== false) failures.push(`Expected unauthenticated session, got ${JSON.stringify(sessionBefore)}.`);
   if (wrongLogin.status !== 401) failures.push(`Expected wrong login 401, got ${JSON.stringify(wrongLogin)}.`);
   if (!loginBody.ok || !cookie) failures.push(`Expected login cookie, got body=${JSON.stringify(loginBody)} cookie=${cookie}.`);
+  if (/;\s*Secure/i.test(loginSetCookie)) failures.push(`Expected direct HTTP login cookie to omit Secure, got ${loginSetCookie}.`);
+  if (!/;\s*Secure/i.test(proxiedSetCookie)) failures.push(`Expected HTTPS-proxied login cookie to include Secure, got ${proxiedSetCookie}.`);
   if (groupCreate.group.slug !== 'family-days') failures.push(`Expected group slug family-days, got ${JSON.stringify(groupCreate)}.`);
   if (upload.count !== 1 || upload.photos[0]?.group !== 'family-days') failures.push(`Expected uploaded public photo in family-days, got ${JSON.stringify(upload)}.`);
   if (upload.photos[0]?.canReprocess !== false) failures.push(`Expected new uploads to omit original assets, got ${JSON.stringify(upload.photos[0])}.`);

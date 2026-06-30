@@ -209,6 +209,8 @@ npx tsx -e "import { createPasswordHash } from './server/auth.ts'; console.log(c
 GALLERY_ADMIN_PASSWORD_HASH="scrypt:..." SESSION_SECRET="long-random-secret" npm run dev
 ```
 
+后台登录 Cookie 会根据当前请求自动判断是否加 `Secure`：通过 Cloudflare/HTTPS 访问时会加，直接用 `http://服务器IP:5280` 或 `http://localhost:5280` 测试时不会加。若部署环境的代理头不标准，可以在 `.env` 里用 `GALLERY_SESSION_COOKIE_SECURE=0` 或 `GALLERY_SESSION_COOKIE_SECURE=1` 强制覆盖。
+
 服务端也支持 `GALLERY_CONFIG_PATH`、`GALLERY_DATA_DIR`、`GALLERY_MEDIA_DIR`、`GALLERY_UPLOAD_DIR`、`GALLERY_ORIGINAL_DIR`、`GALLERY_MANIFEST_PATH`、`GALLERY_SQLITE_PATH` 和 `GALLERY_DISABLE_SQLITE=1` 覆盖或模拟本地路径，主要用于隔离测试或临时部署。上传管线的端到端验证：
 
 ```bash
