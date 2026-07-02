@@ -1681,6 +1681,7 @@ function onWheel(event) {
 
 function onPointerDown(event) {
   if (state.mode === VIEW.setup || state.mode === VIEW.studio || state.mode === VIEW.about) return;
+  if (isInteractivePointerTarget(event.target)) return;
   syncPointer(event);
   state.dragging = true;
   state.dragMoved = 0;
@@ -1688,6 +1689,11 @@ function onPointerDown(event) {
   state.dragOriginX = event.clientX;
   state.dragStart = event.clientX;
   canvas.setPointerCapture?.(event.pointerId);
+}
+
+function isInteractivePointerTarget(target) {
+  if (!(target instanceof Element)) return false;
+  return Boolean(target.closest('a, button, input, select, textarea, label, summary, [contenteditable="true"]'));
 }
 
 function onPointerMove(event) {
