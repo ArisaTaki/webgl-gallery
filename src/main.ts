@@ -898,6 +898,7 @@ function renderShell() {
         </p>
         <div class="about-social">
           <button type="button" data-action="studio-link">STUDIO</button>
+          <button type="button" data-action="setup-link">SETUP</button>
           <button type="button" data-action="close-about">HOME</button>
         </div>
         <div class="about-list" aria-label="档案信息">
@@ -910,8 +911,8 @@ function renderShell() {
           <div>
             <b>ACCESS</b>
             <span><i>1</i><strong>/STUDIO</strong></span>
-            <span><i>2</i><strong>KEY 13209</strong></span>
-            <span><i>3</i><strong>TYPE NIAN</strong></span>
+            <span><i>2</i><strong>/SETUP</strong></span>
+            <span><i>3</i><strong>ADMIN ONLY</strong></span>
           </div>
           <div>
             <b>DAYS</b>

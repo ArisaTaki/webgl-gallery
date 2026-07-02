@@ -2171,6 +2171,10 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   animation-delay: 360ms;
 }
 
+.gallery-shell.is-about .about-social button:nth-child(3) {
+  animation-delay: 420ms;
+}
+
 .about-list {
   position: absolute;
   right: 50px;
