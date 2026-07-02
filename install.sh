@@ -99,6 +99,8 @@ copy_project() {
       --exclude .gallery \
       --exclude .uploads \
       --exclude .env \
+      --exclude public/data \
+      --exclude public/media \
       "$from"/ "$to"/
   else
     (cd "$from" && tar \
@@ -107,8 +109,31 @@ copy_project() {
       --exclude .gallery \
       --exclude .uploads \
       --exclude .env \
+      --exclude public/data \
+      --exclude public/media \
       -cf - .) | (cd "$to" && tar -xf -)
   fi
+}
+
+project_version() {
+  sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json 2>/dev/null | head -n 1
+}
+
+versioned_prebuilt_image() {
+  image="$1"
+  version="$(project_version)"
+  case "$DEFAULT_PREBUILT_IMAGE" in
+    *:latest) image_repo="${DEFAULT_PREBUILT_IMAGE%:latest}" ;;
+    *) printf '%s\n' "$image"; return 0 ;;
+  esac
+  if [ -z "$version" ]; then
+    printf '%s\n' "$image"
+    return 0
+  fi
+  case "$image" in
+    "$DEFAULT_PREBUILT_IMAGE"|"$image_repo":v[0-9]*) printf '%s:v%s\n' "$image_repo" "$version" ;;
+    *) printf '%s\n' "$image" ;;
+  esac
 }
 
 prepare_env() {
@@ -128,7 +153,11 @@ prepare_env() {
   if [ "$IMAGE_MODE" = "build" ]; then
     default_image="webgl-gallery:local"
   fi
+  image_from_env="${WEBGL_GALLERY_IMAGE+x}"
   WEBGL_GALLERY_IMAGE="${WEBGL_GALLERY_IMAGE:-$(env_value WEBGL_GALLERY_IMAGE "$default_image")}"
+  if [ "$IMAGE_MODE" = "prebuilt" ] && [ "$image_from_env" != "x" ]; then
+    WEBGL_GALLERY_IMAGE="$(versioned_prebuilt_image "$WEBGL_GALLERY_IMAGE")"
+  fi
   set_env WEBGL_GALLERY_COMPOSE_PROJECT "$WEBGL_GALLERY_COMPOSE_PROJECT"
   set_env WEBGL_GALLERY_HOSTNAME "$HOSTNAME"
   set_env WEBGL_GALLERY_PORT "$WEBGL_GALLERY_PORT"
@@ -436,7 +465,13 @@ start_docker() {
 start_docker_prebuilt() {
   [ -f docker-compose.image.yml ] || fail "docker-compose.image.yml is required for WEBGL_GALLERY_IMAGE_MODE=prebuilt."
   log "Using prebuilt Docker image: ${WEBGL_GALLERY_IMAGE:-$DEFAULT_PREBUILT_IMAGE}"
-  docker compose -f docker-compose.image.yml pull gallery || log "Image pull was skipped or failed; Docker will use a local image if available."
+  if ! docker compose -f docker-compose.image.yml pull gallery; then
+    if docker image inspect "${WEBGL_GALLERY_IMAGE:-$DEFAULT_PREBUILT_IMAGE}" >/dev/null 2>&1; then
+      log "Image pull failed; using the matching local image."
+    else
+      fail "Could not pull ${WEBGL_GALLERY_IMAGE:-$DEFAULT_PREBUILT_IMAGE}, and no matching local image exists."
+    fi
+  fi
   if has_tunnel_token; then
     docker compose -f docker-compose.image.yml --profile tunnel up -d
     log ""

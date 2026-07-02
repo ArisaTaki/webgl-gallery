@@ -1330,15 +1330,32 @@ function ensureBackgroundPlane() {
 function loadPlaneTexture(photo, uniforms) {
   const primarySrc = photo.medium || photo.large || photo.thumb;
   const fallbackSrc = photo.thumb && photo.thumb !== primarySrc ? photo.thumb : '';
+  const placeholderSrc = photo.blurDataUrl || '';
 
   return new Promise<void>((resolve) => {
     const finish = () => {
       markTextureLoaded();
       resolve();
     };
+    const loadPlaceholder = () => {
+      if (!placeholderSrc) {
+        finish();
+        return;
+      }
+      loader.load(
+        placeholderSrc,
+        (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          uniforms.uTexture.value = texture;
+          finish();
+        },
+        undefined,
+        finish,
+      );
+    };
     const loadFallback = () => {
       if (!fallbackSrc) {
-        finish();
+        loadPlaceholder();
         return;
       }
       loader.load(
@@ -1349,12 +1366,12 @@ function loadPlaneTexture(photo, uniforms) {
           finish();
         },
         undefined,
-        finish,
+        loadPlaceholder,
       );
     };
 
     if (!primarySrc) {
-      finish();
+      loadPlaceholder();
       return;
     }
 

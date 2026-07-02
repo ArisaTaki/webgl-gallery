@@ -10,6 +10,8 @@ const archivePath = path.join(tempRoot, 'webgl-gallery.tar.gz');
 const installDir = path.join(tempRoot, 'installed');
 const r2InstallDir = path.join(tempRoot, 'installed-r2');
 const configR2InstallDir = path.join(tempRoot, 'installed-config-r2');
+const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+const releaseImage = `ghcr.io/arisataki/webgl-gallery:v${packageJson.version}`;
 
 try {
   await run('tar', [
@@ -57,7 +59,7 @@ try {
   const firstEnv = await readFile(path.join(installDir, '.env'), 'utf8');
   if (!firstEnv.includes('WEBGL_GALLERY_STORAGE_MODE=local')) throw new Error('Installer did not default to local storage mode.');
   if (!firstEnv.includes('WEBGL_GALLERY_IMAGE_MODE=prebuilt')) throw new Error('Installer did not default to prebuilt image mode.');
-  if (!firstEnv.includes('WEBGL_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest')) throw new Error('Installer did not default to the GHCR latest image.');
+  if (!firstEnv.includes(`WEBGL_GALLERY_IMAGE=${releaseImage}`)) throw new Error('Installer did not pin the matching GHCR release image.');
   if (!firstEnv.includes('WEBGL_GALLERY_PORT=5280')) throw new Error('Installer did not default to port 5280.');
   if (firstEnv.includes('R2_ACCOUNT_ID=')) throw new Error('Local install should remove blank R2 placeholders.');
 
@@ -158,8 +160,14 @@ try {
   if (configR2Env.includes('R2_ACCOUNT_ID=')) throw new Error('Installer should not duplicate existing app-config R2 secrets into .env.');
 
   await mkdir(path.join(installDir, '.gallery'), { recursive: true });
+  await mkdir(path.join(installDir, '.uploads', 'originals'), { recursive: true });
+  await mkdir(path.join(installDir, 'public', 'data'), { recursive: true });
+  await mkdir(path.join(installDir, 'public', 'media', 'thumb'), { recursive: true });
   await writeFile(path.join(installDir, '.gallery', 'config.json'), '{"setupComplete":true}\n');
-  await writeFile(path.join(installDir, '.env'), 'WEBGL_GALLERY_IMAGE_MODE=prebuilt\nCLOUDFLARE_TUNNEL_TOKEN=test-token\n');
+  await writeFile(path.join(installDir, '.uploads', 'originals', 'source.jpg'), 'original-sentinel\n');
+  await writeFile(path.join(installDir, 'public', 'data', 'runtime.json'), '{"runtime":true}\n');
+  await writeFile(path.join(installDir, 'public', 'media', 'thumb', 'photo.webp'), 'media-sentinel\n');
+  await writeFile(path.join(installDir, '.env'), 'WEBGL_GALLERY_IMAGE_MODE=prebuilt\nWEBGL_GALLERY_IMAGE=ghcr.io/arisataki/webgl-gallery:latest\nCLOUDFLARE_TUNNEL_TOKEN=test-token\n');
   await writeFile(path.join(installDir, 'README.md'), 'stale local file\n');
 
   const update = await run('sh', [path.join(root, 'install.sh')], {
@@ -178,9 +186,16 @@ try {
   const refreshedReadme = await readFile(path.join(installDir, 'README.md'), 'utf8');
   const preservedEnv = await readFile(path.join(installDir, '.env'), 'utf8');
   const preservedConfig = await readFile(path.join(installDir, '.gallery', 'config.json'), 'utf8');
+  const preservedOriginal = await readFile(path.join(installDir, '.uploads', 'originals', 'source.jpg'), 'utf8');
+  const preservedRuntimeData = await readFile(path.join(installDir, 'public', 'data', 'runtime.json'), 'utf8');
+  const preservedMedia = await readFile(path.join(installDir, 'public', 'media', 'thumb', 'photo.webp'), 'utf8');
   if (!refreshedReadme.startsWith('# WebGL Gallery')) throw new Error('Installer update did not refresh project files.');
   if (!preservedEnv.includes('CLOUDFLARE_TUNNEL_TOKEN=test-token')) throw new Error('Installer update did not preserve .env.');
+  if (!preservedEnv.includes(`WEBGL_GALLERY_IMAGE=${releaseImage}`)) throw new Error('Installer update did not advance the official image tag.');
   if (!preservedConfig.includes('"setupComplete":true')) throw new Error('Installer update did not preserve .gallery config.');
+  if (!preservedOriginal.includes('original-sentinel')) throw new Error('Installer update did not preserve .uploads originals.');
+  if (!preservedRuntimeData.includes('"runtime":true')) throw new Error('Installer update deleted public/data runtime files.');
+  if (!preservedMedia.includes('media-sentinel')) throw new Error('Installer update deleted public/media files.');
 
   const uninstall = await run('sh', [path.join(root, 'install.sh')], {
     cwd: tempRoot,
