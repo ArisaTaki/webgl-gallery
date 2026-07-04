@@ -161,12 +161,12 @@ export class LocalStorage {
 
   async getAssetBuffer(asset) {
     const root = asset.kind === 'original' ? this.originalDir : this.mediaDir;
-    return readFile(path.join(root, asset.r2Key || asset.key));
+    return readFile(localAssetPath(root, asset.r2Key || asset.key));
   }
 
   async deleteAsset(asset) {
     const root = asset.kind === 'original' ? this.originalDir : this.mediaDir;
-    await unlink(path.join(root, asset.r2Key || asset.key)).catch(() => {});
+    await unlink(localAssetPath(root, asset.r2Key || asset.key)).catch(() => {});
   }
 }
 
@@ -190,6 +190,7 @@ export class R2Storage {
         Bucket: bucket,
         Key: key,
         Body: buffer,
+        CacheControl: kind === 'original' ? 'private, no-store' : 'public, max-age=31536000, immutable',
         ContentLength: buffer.byteLength,
         ContentType: mimeType,
       }),
@@ -277,4 +278,13 @@ function samePath(left, right) {
 function isSubPath(child, parent) {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
   return Boolean(relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function localAssetPath(root, key) {
+  const resolvedRoot = path.resolve(root);
+  const resolvedPath = path.resolve(resolvedRoot, String(key || ''));
+  if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)) {
+    throw new Error('Asset path escapes the configured storage directory.');
+  }
+  return resolvedPath;
 }

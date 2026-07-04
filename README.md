@@ -1,6 +1,6 @@
 # WebGL Gallery
 
-一个本地优先的 TypeScript WebGL 家庭相册。前端使用 Three.js shader 做横向胶片带、滚动形变、颗粒和暗角；服务端负责上传照片、生成 WebP 派生图并更新照片清单。
+一个本地优先的 TypeScript WebGL 相册。前端使用 Three.js shader 做横向胶片带、滚动形变、颗粒和暗角；服务端负责上传照片、生成 WebP 派生图并更新照片清单。
 
 ## 一键启动
 
@@ -92,6 +92,8 @@ docker compose -f docker-compose.image.yml up -d
 
 - `Local folder on this server`: 图片派生图保存在服务器本地 `public/media/`，只启动 gallery 应用容器。
 - `Cloudflare R2`: 设置 `WEBGL_GALLERY_STORAGE_MODE=r2` 并预置 `R2_ACCOUNT_ID`、`R2_ACCESS_KEY_ID`、`R2_SECRET_ACCESS_KEY`、公开/私有 bucket 和公开图片域名时，脚本会直接使用 R2。
+
+已经完成首次配置后，在 `/setup` 切换 Local/R2 会自动复制现有图片资源并更新资源地址；复制失败的旧资源会保留原地址并在 Studio 显示迁移结果。数据库后端不会在设置页里静默切换，以免打开一个空图库；SQLite/JSON/Postgres 之间迁移元数据需要先使用专门迁移流程。
 
 如果仍想让安装器在终端里询问 Local/R2，可以设置 `WEBGL_GALLERY_INTERACTIVE=1`。
 
@@ -202,12 +204,14 @@ http://localhost:5280/studio
 npm run dev
 ```
 
-没有配置管理员密码 hash 时，开发环境会临时沿用 `GALLERY_UPLOAD_KEY`，默认是 `13209`。生产环境建议在 `/setup` 里设置后台密码。`SESSION_SECRET` 通常会自动生成并保存在配置文件里，只有需要固定多实例会话签名时才手动设置：
+管理员密码必须通过 `/setup` 设置，或者显式提供 `GALLERY_ADMIN_PASSWORD_HASH`；项目没有默认后台密码。`SESSION_SECRET` 通常会自动生成并保存在配置文件里，只有需要固定多实例会话签名时才手动设置：
 
 ```bash
 npx tsx -e "import { createPasswordHash } from './server/auth.ts'; console.log(createPasswordHash('your-password'))"
 GALLERY_ADMIN_PASSWORD_HASH="scrypt:..." SESSION_SECRET="long-random-secret" npm run dev
 ```
+
+旧版 `/api/upload` 默认关闭。仅在兼容旧客户端时设置 `GALLERY_UPLOAD_KEY`，并通过 `X-Gallery-Key` 请求头发送；新客户端应使用 `/studio` 和管理员会话上传。
 
 后台登录 Cookie 会根据当前请求自动判断是否加 `Secure`：通过 Cloudflare/HTTPS 访问时会加，直接用 `http://服务器IP:5280` 或 `http://localhost:5280` 测试时不会加。若部署环境的代理头不标准，可以在 `.env` 里用 `GALLERY_SESSION_COOKIE_SECURE=0` 或 `GALLERY_SESSION_COOKIE_SECURE=1` 强制覆盖。
 

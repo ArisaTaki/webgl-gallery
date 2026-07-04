@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import crypto from 'node:crypto';
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -51,7 +52,8 @@ try {
       GALLERY_MEDIA_DIR: mediaDir,
       GALLERY_ORIGINAL_DIR: originalDir,
       GALLERY_UPLOAD_DIR: uploadDir,
-      GALLERY_UPLOAD_KEY: ADMIN_PASSWORD,
+      GALLERY_ADMIN_PASSWORD_HASH: createPasswordHash(ADMIN_PASSWORD),
+      GALLERY_UPLOAD_KEY: '',
       NODE_ENV: 'production',
       PORT: String(port),
       R2_ACCOUNT_ID: '',
@@ -72,6 +74,12 @@ try {
 
   const sessionBefore = await fetchJson('/api/admin/session');
   const wrongLogin = await postJson('/api/admin/login', { password: 'wrong' });
+  const removedDefaultLogin = await postJson('/api/admin/login', { password: '13209' });
+  const legacyUploadDisabledResponse = await fetch(`${serverUrl}/api/upload`, {
+    headers: { 'X-Gallery-Key': '13209' },
+    method: 'POST',
+  });
+  const legacyUploadDisabled = { status: legacyUploadDisabledResponse.status, body: await legacyUploadDisabledResponse.json() };
   const rightLogin = await fetch(`${serverUrl}/api/admin/login`, {
     body: JSON.stringify({ password: ADMIN_PASSWORD }),
     headers: { 'Content-Type': 'application/json' },
@@ -98,50 +106,76 @@ try {
   });
   const groupId = groupCreate.group.id;
 
+  const failedBatchForm = new FormData();
+  failedBatchForm.append('groupId', groupId);
+  failedBatchForm.append('photos', new Blob([await readFile(inputPath)], { type: 'image/png' }), 'valid.png');
+  failedBatchForm.append('photos', new Blob([Buffer.from('not an image')], { type: 'image/png' }), 'broken.png');
+  const failedBatch = await adminRequest(cookie, '/api/admin/photos', { body: failedBatchForm, method: 'POST' });
+  const galleryAfterFailedBatch = await adminJson(cookie, '/api/admin/gallery');
+  const mediaAfterFailedBatch = await readdir(mediaDir, { recursive: true }).catch(() => []);
+
   const uploadForm = new FormData();
   uploadForm.append('groupId', groupId);
-  uploadForm.append('title', 'Morning Light');
+  uploadForm.append('titlePrefix', 'Morning Light');
   uploadForm.append('description', 'Window and tiny hands');
   uploadForm.append('capturedAt', '2026-06-25');
   uploadForm.append('photos', new Blob([await readFile(inputPath)], { type: 'image/png' }), 'admin sample.png');
+  uploadForm.append('photos', new Blob([await readFile(inputPath)], { type: 'image/png' }), 'admin sample 2.png');
   const upload = await adminJson(cookie, '/api/admin/photos', {
     body: uploadForm,
     method: 'POST',
   });
-  const photo = upload.photos[0];
+  const photo = upload.addedPhotos[0];
   const patch = await adminJson(cookie, `/api/admin/photos/${photo.id}`, {
-    body: JSON.stringify({ title: 'Morning Light Edited', description: 'Edited copy', sortOrder: 7 }),
+    body: JSON.stringify({ title: 'Morning Light Edited', description: 'Edited copy', sortOrder: 7, visitUrl: 'javascript:alert(1)' }),
     headers: { 'Content-Type': 'application/json' },
     method: 'PATCH',
   });
   const reprocess = await adminRequest(cookie, `/api/admin/photos/${photo.id}/reprocess`, { method: 'POST' });
   const publicGallery = await fetchJson('/api/gallery?group=family-days');
   const variants = await inspectVariants(publicGallery.photos[0]);
-  const deleted = await adminJson(cookie, `/api/admin/photos/${photo.id}`, { method: 'DELETE' });
+  const missingMedia = await fetch(`${serverUrl}/media/does-not-exist.webp`);
+  const deleted = [];
+  for (const uploadedPhoto of upload.addedPhotos) {
+    deleted.push(await adminJson(cookie, `/api/admin/photos/${uploadedPhoto.id}`, { method: 'DELETE' }));
+  }
   const deleteGroup = await adminJson(cookie, `/api/admin/groups/${groupId}`, { method: 'DELETE' });
 
   const failures = [];
   if (sessionBefore.authenticated !== false) failures.push(`Expected unauthenticated session, got ${JSON.stringify(sessionBefore)}.`);
   if (wrongLogin.status !== 401) failures.push(`Expected wrong login 401, got ${JSON.stringify(wrongLogin)}.`);
+  if (removedDefaultLogin.status !== 401) failures.push(`Expected removed default password to return 401, got ${JSON.stringify(removedDefaultLogin)}.`);
+  if (legacyUploadDisabled.status !== 404) failures.push(`Expected unconfigured legacy upload to return 404, got ${JSON.stringify(legacyUploadDisabled)}.`);
   if (!loginBody.ok || !cookie) failures.push(`Expected login cookie, got body=${JSON.stringify(loginBody)} cookie=${cookie}.`);
   if (/;\s*Secure/i.test(loginSetCookie)) failures.push(`Expected direct HTTP login cookie to omit Secure, got ${loginSetCookie}.`);
   if (!/;\s*Secure/i.test(proxiedSetCookie)) failures.push(`Expected HTTPS-proxied login cookie to include Secure, got ${proxiedSetCookie}.`);
   if (groupCreate.group.slug !== 'family-days') failures.push(`Expected group slug family-days, got ${JSON.stringify(groupCreate)}.`);
-  if (upload.count !== 1 || upload.photos[0]?.group !== 'family-days') failures.push(`Expected uploaded public photo in family-days, got ${JSON.stringify(upload)}.`);
-  if (upload.photos[0]?.canReprocess !== false) failures.push(`Expected new uploads to omit original assets, got ${JSON.stringify(upload.photos[0])}.`);
-  if (patch.photo.title !== 'Morning Light Edited') failures.push(`Expected patched title, got ${JSON.stringify(patch)}.`);
+  if (failedBatch.status !== 415 || galleryAfterFailedBatch.photos.length !== 0 || mediaAfterFailedBatch.some((item) => item.endsWith('.webp'))) {
+    failures.push(`Expected failed mixed batch to roll back metadata and assets, got ${JSON.stringify({ failedBatch, galleryAfterFailedBatch, mediaAfterFailedBatch })}.`);
+  }
+  if (upload.count !== 2 || upload.uploadedCount !== 2 || upload.addedPhotos?.length !== 2) failures.push(`Expected two newly uploaded photos, got ${JSON.stringify(upload)}.`);
+  if (upload.addedPhotos?.map((item) => item.title).join('|') !== 'Morning Light 001|Morning Light 002') {
+    failures.push(`Expected continuous batch numbering, got ${JSON.stringify(upload.addedPhotos?.map((item) => item.title))}.`);
+  }
+  if (upload.addedPhotos[0]?.group !== 'family-days' || upload.addedPhotos[0]?.canReprocess !== false) {
+    failures.push(`Expected uploaded public photo in family-days without an original asset, got ${JSON.stringify(upload.addedPhotos[0])}.`);
+  }
+  if (patch.photo.title !== 'Morning Light Edited' || patch.photo.visitUrl !== '') failures.push(`Expected patched title and rejected unsafe URL, got ${JSON.stringify(patch)}.`);
   if (reprocess.status !== 409 || !String(reprocess.body?.message || '').includes('Original asset is not available')) {
     failures.push(`Expected reprocess without an original asset to return 409, got ${JSON.stringify(reprocess)}.`);
   }
-  if (publicGallery.count !== 1 || !publicGallery.groups.some((group) => group.slug === 'family-days')) {
-    failures.push(`Expected filtered public gallery count 1 with family-days group, got ${JSON.stringify(publicGallery)}.`);
+  if (publicGallery.count !== 2 || !publicGallery.groups.some((group) => group.slug === 'family-days')) {
+    failures.push(`Expected filtered public gallery count 2 with family-days group, got ${JSON.stringify(publicGallery)}.`);
+  }
+  if (missingMedia.status !== 404 || String(missingMedia.headers.get('content-type')).includes('text/html')) {
+    failures.push(`Expected missing media to return a non-HTML 404, got ${missingMedia.status} ${missingMedia.headers.get('content-type')}.`);
   }
   for (const [kind, width] of [['thumb', 520], ['medium', 1280], ['large', 1800]]) {
     if (variants[kind]?.width !== width || variants[kind]?.format !== 'webp') {
       failures.push(`Expected ${kind} ${width}px webp, got ${JSON.stringify(variants[kind])}.`);
     }
   }
-  if (!deleted.ok || !deleteGroup.ok) failures.push(`Expected delete photo/group ok, got ${JSON.stringify({ deleted, deleteGroup })}.`);
+  if (!deleted.every((item) => item.ok) || !deleteGroup.ok) failures.push(`Expected delete photos/group ok, got ${JSON.stringify({ deleted, deleteGroup })}.`);
 
   console.log(JSON.stringify({
     ok: failures.length === 0,
@@ -232,4 +266,9 @@ async function inspectVariants(photo) {
     };
   }
   return result;
+}
+
+function createPasswordHash(password) {
+  const salt = 'qa-admin-api-v112';
+  return `scrypt:${salt}:${crypto.scryptSync(password, salt, 64).toString('hex')}`;
 }

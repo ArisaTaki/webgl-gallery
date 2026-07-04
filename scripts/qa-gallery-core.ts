@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
   defaultGroup,
   makeR2Key,
   makeUniqueSlug,
+  normalizeVisitUrl,
   publicPhotoFromRecord,
   slugify,
 } from '../server/galleryUtils.js';
+import { createGalleryStore } from '../server/galleryStore.js';
 import { buildPhotoDerivatives } from '../server/photoPipeline.js';
 import { publicSetupStatus } from '../server/runtimeConfig.js';
 import { missingR2ConfigFields, resolveR2Config, verifyLocalStorageConfig, verifyR2StorageConfig } from '../server/storage.js';
@@ -18,6 +20,8 @@ const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'gallery-core-'));
 try {
   assert.equal(slugify(' 小小 Gallery 01! '), 'gallery-01');
   assert.equal(makeUniqueSlug('photo', ['photo', 'photo-2']), 'photo-3');
+  assert.equal(normalizeVisitUrl('javascript:alert(1)'), '');
+  assert.equal(normalizeVisitUrl('https://example.com/photo'), 'https://example.com/photo');
   assert.equal(
     makeR2Key({ groupSlug: 'Family Days', photoId: 'Photo 01', kind: 'thumb', fileName: 'Kid 01.webp' }),
     'thumb/family-days/photo-01/kid-01.webp',
@@ -69,6 +73,43 @@ try {
   assert.equal(processed.assets.find((asset) => asset.kind === 'medium')?.width, 1280);
   assert.equal(processed.assets.find((asset) => asset.kind === 'large')?.width, 2200);
   assert.ok(processed.photo.blurDataUrl.startsWith('data:image/webp;base64,'));
+
+  const storeRoot = path.join(tempRoot, 'store');
+  const storeManifest = path.join(storeRoot, 'data', 'photos.json');
+  const storeMedia = path.join(storeRoot, 'media');
+  const migratedMedia = path.join(storeRoot, 'media-migrated');
+  const storeOriginals = path.join(storeRoot, 'originals');
+  const migratedOriginals = path.join(storeRoot, 'originals-migrated');
+  const storeUpload = path.join(storeRoot, 'upload.svg');
+  await mkdir(storeRoot, { recursive: true });
+  await writeFile(storeUpload, await readFile(inputPath));
+  const galleryStore = createGalleryStore({
+    dataDir: path.dirname(storeManifest),
+    manifestPath: storeManifest,
+    mediaDir: storeMedia,
+    originalDir: storeOriginals,
+    uploadDir: path.join(storeRoot, 'uploads'),
+    runtimeConfig: {
+      database: { kind: 'json', manifestPath: storeManifest },
+      storage: { kind: 'local', mediaDir: storeMedia, originalDir: storeOriginals },
+    },
+  });
+  await galleryStore.init();
+  const uploadResult = await galleryStore.addPhotos({
+    files: [{ path: storeUpload, originalname: 'sample.svg' }],
+    titlePrefix: 'Core',
+  });
+  assert.equal(uploadResult.uploadedCount, 1);
+  const storageMigration = await galleryStore.migrateStorage({
+    kind: 'local',
+    mediaDir: migratedMedia,
+    originalDir: migratedOriginals,
+  });
+  assert.deepEqual(
+    { attempted: storageMigration.attempted, copied: storageMigration.copied, failed: storageMigration.failed },
+    { attempted: 3, copied: 3, failed: 0 },
+  );
+  assert.equal((await readdir(migratedMedia, { recursive: true })).filter((name) => name.endsWith('.webp')).length, 3);
 
   const localProbe = await verifyLocalStorageConfig({
     kind: 'local',

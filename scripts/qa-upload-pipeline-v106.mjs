@@ -202,12 +202,12 @@ function normalizePublicPhotosResponse(data) {
 
 async function uploadPhoto({ key, titlePrefix }) {
   const form = new FormData();
-  form.append('key', key);
   form.append('titlePrefix', titlePrefix);
   const bytes = await readFile(inputPath);
   form.append('photos', new Blob([bytes], { type: 'image/png' }), 'upload sample.png');
   const response = await fetch(`${serverUrl}/api/upload`, {
     body: form,
+    headers: { 'X-Gallery-Key': key },
     method: 'POST',
   });
   return {

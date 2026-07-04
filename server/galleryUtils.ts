@@ -35,6 +35,17 @@ export function normalizePhotoStatus(value) {
   return 'active';
 }
 
+export function normalizeVisitUrl(value) {
+  const candidate = String(value || '').trim();
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
 export function toInt(value, fallback = 0) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.round(number) : fallback;
@@ -82,7 +93,7 @@ export function publicPhotoFromRecord({ photo, assets, group }) {
     medium: assetByKind.get('medium')?.url || photo.medium || '',
     large: assetByKind.get('large')?.url || photo.large || '',
     canReprocess: assetByKind.has('original'),
-    visitUrl: photo.visitUrl || '',
+    visitUrl: normalizeVisitUrl(photo.visitUrl),
     workMedia: photo.workMedia || [],
     index: photo.index || 1,
   };

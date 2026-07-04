@@ -177,6 +177,7 @@ const state = {
   activeIndex: 0,
   aboutReturnMode: VIEW.index,
   albumPhotos: [],
+  albumRequestId: 0,
   adminAuthenticated: false,
   adminGallery: { groups: [], photos: [] },
   adminLoading: false,
@@ -223,6 +224,7 @@ const state = {
   pointerActive: false,
   projectSwitchStartedAt: 0,
   photos: [],
+  galleryPhotoCount: 0,
   ready: false,
   rotateLatency: 0,
   setupLanguage: getInitialSetupLanguage(),
@@ -344,22 +346,12 @@ const TITLE_LAYOUT = {
 };
 
 const PROJECT_TITLE_BANK = [
-  ['NIAN NIAN', 'DIARY'],
-  ['JOY', ''],
-  ['FIRST', 'STEPS'],
-  ['TINY', 'HANDS'],
-  ['SOFT', 'MORNING'],
-  ['LITTLE', 'DAYS'],
-  ['SMALL', 'WONDER'],
-  ['FAMILY', 'LIGHT'],
-  ['QUIET', 'PLAY'],
-  ['HAPPY', 'HOURS'],
-  ['GROWING', 'UP'],
-  ['SUNNY', 'WALK'],
-  ['BABY', 'DREAM'],
-  ['HOME', 'MOVIE'],
-  ['SWEET', 'TIME'],
-  ['LOVE', 'NOTES'],
+  ['WEBGL', 'GALLERY'],
+  ['PHOTO', 'ALBUM'],
+  ['VISUAL', 'ARCHIVE'],
+  ['LIGHT', 'MEMORY'],
+  ['FRAME', 'STORY'],
+  ['IMAGE', 'COLLECTION'],
 ];
 
 const WORK_MEDIA_WINDOW = 7;
@@ -457,15 +449,27 @@ async function loadPhotos() {
     state.currentGroupSlug = '';
     state.albumPhotos = [];
     const manifest = await fetchGalleryPayload('/api/photos');
-    return normalizePhotos(Array.isArray(manifest) ? manifest : manifest.photos || []);
+    const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
+    state.galleryPhotoCount = photos.length;
+    return normalizePhotos(photos);
   }
 
   const manifest = await fetchGalleryPayload('/api/gallery');
   const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
+  state.galleryPhotoCount = photos.length;
   const projects = normalizeAlbumProjects(Array.isArray(manifest) ? [] : manifest.groups || [], photos);
   if (groupSlug) {
-    state.currentGroupSlug = groupSlug;
-    state.albumPhotos = photosForGroup(photos, groupSlug, projects);
+    const projectExists = projects.some((project) =>
+      project.group === groupSlug || project.slug === groupSlug || project.groupId === groupSlug,
+    );
+    if (projectExists) {
+      state.currentGroupSlug = groupSlug;
+      state.albumPhotos = photosForGroup(photos, groupSlug, projects);
+    } else {
+      state.currentGroupSlug = '';
+      state.albumPhotos = [];
+      history.replaceState({}, '', '/');
+    }
   } else {
     state.currentGroupSlug = '';
     state.albumPhotos = [];
@@ -579,7 +583,7 @@ function photosForGroup(photos, groupSlug, projects = state.photos) {
     photo.groupId === groupId ||
     (!photo.group && !photo.groupId && groupSlug === 'default'),
   );
-  return normalized.length ? normalized : normalizePhotos(photos);
+  return normalized;
 }
 
 function getWorkPhotos() {
@@ -648,7 +652,18 @@ function getWorkImageSrc(index) {
 function getWorkVisitUrl() {
   const activePhoto = state.photos[state.activeIndex];
   const workPhoto = getWorkPhotos()[state.workIndex] || activePhoto;
-  return activePhoto?.visitUrl || workPhoto?.visitUrl || getWorkImageSrc(state.workIndex) || getWorkImageSrc(state.activeIndex);
+  const requested = activePhoto?.visitUrl || workPhoto?.visitUrl;
+  return safeBrowserUrl(requested) || safeBrowserUrl(getWorkImageSrc(state.workIndex)) || safeBrowserUrl(getWorkImageSrc(state.activeIndex));
+}
+
+function safeBrowserUrl(value) {
+  if (!value) return '';
+  try {
+    const url = new URL(String(value), window.location.origin);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
 }
 
 function warmWorkLayerImage(index) {
@@ -686,6 +701,7 @@ function makePhotoSlug(photo, index) {
 
 function renderShell() {
   const total = state.photos.length || 0;
+  const archiveTotal = state.galleryPhotoCount || state.albumPhotos.length || total;
   const activeTitle = shadowTitleFor(state.photos[state.activeIndex], state.activeIndex);
   const ticks = Array.from(
     { length: Math.max(total, 30) },
@@ -707,8 +723,8 @@ function renderShell() {
   const rails = railPhotos
     .map(
       (photo, index) => `
-        <button class="detail-thumb" type="button" data-index="${index}" style="--thumb-index:${index}" aria-label="${photo.title}">
-          <span data-thumb-src="${photo.thumb || photo.medium || ''}"></span>
+        <button class="detail-thumb" type="button" data-index="${index}" style="--thumb-index:${index}" aria-label="${escapeHtml(photo.title || 'Photo')}">
+          <span data-thumb-src="${escapeHtml(photo.thumb || photo.medium || '')}"></span>
         </button>
       `,
     )
@@ -718,7 +734,7 @@ function renderShell() {
     .map(
       (photo, index) => `
         <div class="work-layer" data-work-index="${index}" aria-hidden="true">
-          <img class="work-layer-img" src="${EMPTY_MEDIA_SRC}" data-work-src="${photo.large || photo.medium || photo.thumb || ''}" alt="" draggable="false" loading="lazy" crossorigin="anonymous" />
+          <img class="work-layer-img" src="${EMPTY_MEDIA_SRC}" data-work-src="${escapeHtml(photo.large || photo.medium || photo.thumb || '')}" alt="" draggable="false" loading="lazy" crossorigin="anonymous" />
         </div>
       `,
     )
@@ -744,13 +760,13 @@ function renderShell() {
       <section class="mobile-fallback" aria-label="移动端提示">
         <header class="mobile-fallback-top">
           <strong>IROP GALLERY</strong>
-          <span>FAMILY PHOTO ARCHIVE<br />AVAILABLE LOCAL ↗</span>
+          <span>SELF-HOSTED PHOTO ARCHIVE<br />AVAILABLE LOCAL ↗</span>
         </header>
-        <h1>13209<br />MEMORY</h1>
+        <h1>WEBGL<br />GALLERY</h1>
         <p class="mobile-fallback-note">(VISIT ON A DESKTOP FOR A FULL GALLERY)</p>
         <p class="mobile-fallback-copy">
-          NIAN NIAN'S LOCAL PHOTO ARCHIVE IS BUILT AS A DESKTOP WEBGL GALLERY,
-          WITH SHADER MOTION, PROJECT TRANSITIONS AND LARGE PHOTO PLANES.
+          A SELF-HOSTED PHOTO ARCHIVE WITH WEBGL MOTION, PROJECT TRANSITIONS
+          AND RESPONSIVE IMAGE PLANES.
         </p>
         <div class="mobile-fallback-contact">
           <b>CONTACT</b>
@@ -808,23 +824,23 @@ function renderShell() {
         </div>
         <div class="project-shadow-meta">
           <div><b>A</b><span>CAPTURED</span><strong>LOCAL ARCHIVE</strong></div>
-          <div><b>B</b><span>TYPE</span><strong>FAMILY PHOTO</strong></div>
+          <div><b>B</b><span>TYPE</span><strong>PHOTO ALBUM</strong></div>
           <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
           <div><b>D</b><span>FRAME</span><strong data-shadow-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
         </div>
         <div class="project-shadow-meta project-shadow-meta-prev">
           <div><b>A</b><span>CAPTURED</span><strong>LOCAL ARCHIVE</strong></div>
-          <div><b>B</b><span>TYPE</span><strong>FAMILY PHOTO</strong></div>
+          <div><b>B</b><span>TYPE</span><strong>PHOTO ALBUM</strong></div>
           <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
           <div><b>D</b><span>FRAME</span><strong data-shadow-frame-prev>001 / ${String(total).padStart(3, '0')}</strong></div>
         </div>
         <div class="project-shadow-copy" data-shadow-copy>
-          <div>AN INTIMATE LOCAL PHOTO ARCHIVE OF HER</div>
-          <div>NIAN NIAN'S EARLY DAYS.</div>
+          <div>A CURATED PHOTO ALBUM</div>
+          <div>BUILT FOR THE WEB.</div>
         </div>
         <div class="project-shadow-copy project-shadow-copy-prev" data-shadow-copy-prev>
-          <div>AN INTIMATE LOCAL PHOTO ARCHIVE OF HER</div>
-          <div>NIAN NIAN'S EARLY DAYS.</div>
+          <div>A CURATED PHOTO ALBUM</div>
+          <div>BUILT FOR THE WEB.</div>
         </div>
         <button class="shadow-explore" type="button" data-action="shadow-explore">
           <span>EXPLORE</span>
@@ -839,13 +855,13 @@ function renderShell() {
       </nav>
 
       <section class="detail-title" aria-live="polite">
-        <span>NIAN</span>
-        <span>NIAN</span>
+        <span>WEBGL</span>
+        <span>GALLERY</span>
       </section>
 
       <section class="project-meta" aria-live="polite">
         <div><b>A</b><span>CAPTURED</span><strong data-meta-date>LOCAL ARCHIVE</strong></div>
-        <div><b>B</b><span>TYPE</span><strong>FAMILY PHOTO</strong></div>
+        <div><b>B</b><span>TYPE</span><strong>PHOTO ALBUM</strong></div>
         <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
         <div><b>D</b><span>FRAME</span><strong data-meta-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
       </section>
@@ -889,12 +905,12 @@ function renderShell() {
 
       <section class="about-panel" aria-label="About WebGL Gallery" aria-hidden="${state.mode !== VIEW.about}">
         <div class="about-hero" aria-hidden="true">
-          <span>NIAN</span>
-          <span>NIAN</span>
+          <span>WEBGL</span>
+          <span>GALLERY</span>
         </div>
         <p class="about-copy">
-          NIAN NIAN'S PRIVATE LOCAL PHOTO ARCHIVE, BUILT TO KEEP SMALL DAYS VISIBLE.
-          NEW PHOTOS CAN BE ADDED THROUGH THE PRIVATE STUDIO.
+          A SELF-HOSTED WEBGL PHOTO GALLERY FOR ORGANIZING ALBUMS AND KEEPING IMAGES VISIBLE.
+          NEW PHOTOS AND STORAGE SETTINGS ARE MANAGED THROUGH THE PRIVATE STUDIO.
         </p>
         <div class="about-social">
           <button type="button" data-action="studio-link">STUDIO</button>
@@ -904,9 +920,9 @@ function renderShell() {
         <div class="about-list" aria-label="档案信息">
           <div>
             <b>ARCHIVE</b>
-            <span><i>A</i><strong data-about-total>${String(total).padStart(3, '0')} PHOTOS</strong></span>
-            <span><i>B</i><strong>LOCAL FIRST</strong></span>
-            <span><i>C</i><strong>FAMILY MEMORY</strong></span>
+            <span><i>A</i><strong data-about-total>${String(archiveTotal).padStart(3, '0')} PHOTOS</strong></span>
+            <span><i>B</i><strong>LOCAL OR R2</strong></span>
+            <span><i>C</i><strong>WEBGL DISPLAY</strong></span>
           </div>
           <div>
             <b>ACCESS</b>
@@ -915,13 +931,13 @@ function renderShell() {
             <span><i>3</i><strong>ADMIN ONLY</strong></span>
           </div>
           <div>
-            <b>DAYS</b>
-            <span><i>01</i><strong>FIRST STEPS</strong></span>
-            <span><i>02</i><strong>QUIET MORNINGS</strong></span>
-            <span><i>03</i><strong>SMALL ADVENTURES</strong></span>
+            <b>OUTPUT</b>
+            <span><i>01</i><strong>THUMB WEBP</strong></span>
+            <span><i>02</i><strong>MEDIUM WEBP</strong></span>
+            <span><i>03</i><strong>LARGE WEBP</strong></span>
           </div>
         </div>
-        <p class="about-rights">PRIVATE FAMILY ARCHIVE<br />NIAN NIAN 2026</p>
+        <p class="about-rights">SELF-HOSTED PHOTO ARCHIVE<br />WEBGL GALLERY 2026</p>
       </section>
 
       ${setupPanelHtml()}
@@ -1973,7 +1989,11 @@ async function onSetupSave(event: any, form) {
     state.setupMessage = setupT('setupSaved');
     await refreshPublicPhotos();
     setMode(VIEW.studio);
-    ensureAdminLoaded();
+    await ensureAdminLoaded();
+    if (result.storageMigration) {
+      const migration = result.storageMigration;
+      setStudioStatus(`Storage migration: ${migration.copied}/${migration.attempted} assets copied${migration.failed ? `, ${migration.failed} failed` : ''}.`);
+    }
   } catch (error: any) {
     state.setupMessage = setupErrorMessage(error.message);
     updateSetupMessage();
@@ -2117,7 +2137,7 @@ async function onAdminPhotoUpload(event: any, form) {
     await refreshPublicPhotos();
     form.reset();
     updateStudioFileCount(form);
-    setStudioStatus(`Uploaded. ${String(result.count).padStart(3, '0')} photos in gallery.`);
+    setStudioStatus(`Uploaded ${result.uploadedCount || files.length}. ${String(result.count).padStart(3, '0')} photos in gallery.`);
   } catch (error: any) {
     setStudioStatus(error.message);
   } finally {
@@ -3105,7 +3125,8 @@ function updateUi() {
   if (galleryEls.title) galleryEls.title.textContent = photo?.title || 'Gallery';
   if (galleryEls.current) galleryEls.current.textContent = current;
   if (galleryEls.total) galleryEls.total.textContent = total;
-  if (galleryEls.aboutTotal) galleryEls.aboutTotal.textContent = `${total} PHOTOS`;
+  const archiveTotal = String(state.galleryPhotoCount || state.albumPhotos.length || state.photos.length).padStart(3, '0');
+  if (galleryEls.aboutTotal) galleryEls.aboutTotal.textContent = `${archiveTotal} PHOTOS`;
   if (galleryEls.frame) galleryEls.frame.textContent = `${current} / ${total}`;
   const currentShort = String(state.activeIndex + 1).padStart(2, '0');
   const previousIndex = state.exitingProjectIndex >= 0 ? state.exitingProjectIndex : state.activeIndex;
@@ -3217,11 +3238,13 @@ function updateTitleLayer(root, title) {
   const lines = root.querySelectorAll('.title-line');
   if (lines[0] && lines[0].dataset.text !== title[0]) {
     lines[0].dataset.text = title[0];
+    lines[0].classList.toggle('is-wide-script', hasWideTitleCharacters(title[0]));
     lines[0].innerHTML = titleCharsHtml(title[0], 0);
     scheduleTitleLayout();
   }
   if (lines[1] && lines[1].dataset.text !== title[1]) {
     lines[1].dataset.text = title[1];
+    lines[1].classList.toggle('is-wide-script', hasWideTitleCharacters(title[1]));
     lines[1].innerHTML = titleCharsHtml(title[1], 1);
     scheduleTitleLayout();
   }
@@ -3489,8 +3512,11 @@ async function openAlbumProject(index = state.activeIndex) {
   if (!project?.isAlbumProject) return;
   const groupSlug = project.group || project.slug || project.groupId;
   if (!groupSlug) return;
+  const requestId = ++state.albumRequestId;
   state.currentGroupSlug = groupSlug;
-  state.albumPhotos = await loadAlbumPhotos(groupSlug);
+  const albumPhotos = await loadAlbumPhotos(groupSlug);
+  if (requestId !== state.albumRequestId || state.currentGroupSlug !== groupSlug) return;
+  state.albumPhotos = albumPhotos;
   state.workIndex = 0;
   goToPath(`/g/${encodeURIComponent(groupSlug)}`);
   renderShell();
@@ -3502,6 +3528,7 @@ async function openAlbumProject(index = state.activeIndex) {
 
 function closeDetailToIndex() {
   if (state.currentGroupSlug || routeGroupSlug()) {
+    state.albumRequestId += 1;
     state.currentGroupSlug = '';
     state.albumPhotos = [];
     goToPath('/');
@@ -4714,7 +4741,11 @@ function shadowTitleFor(photo, index = 0) {
     : Array.isArray(photo?.titleLines)
       ? photo.titleLines
       : null;
-  const source = custom?.length ? custom : PROJECT_TITLE_BANK[index % PROJECT_TITLE_BANK.length];
+  const source = custom?.length
+    ? custom
+    : photo?.title
+      ? titleLinesFromText(photo.title)
+      : PROJECT_TITLE_BANK[index % PROJECT_TITLE_BANK.length];
   const first = normalizeTitleLine(source?.[0] || PROJECT_TITLE_BANK[0][0]);
   const second = normalizeTitleLine(source?.[1] || '');
   return [first, second];
@@ -4723,11 +4754,35 @@ function shadowTitleFor(photo, index = 0) {
 function normalizeTitleLine(value) {
   return String(value || '')
     .normalize('NFKD')
-    .replace(/[^\w& ]+/g, '')
+    .replace(/[^\p{L}\p{N}& ]+/gu, ' ')
     .replace(/_/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();
+}
+
+function titleLinesFromText(value) {
+  const cleaned = normalizeTitleLine(value);
+  if (!cleaned) return PROJECT_TITLE_BANK[0];
+  const words = cleaned.split(' ').filter(Boolean);
+  if (words.length > 1) {
+    let splitAt = 1;
+    let bestDifference = Number.POSITIVE_INFINITY;
+    for (let index = 1; index < words.length; index += 1) {
+      const left = words.slice(0, index).join(' ');
+      const right = words.slice(index).join(' ');
+      const difference = Math.abs([...left].length - [...right].length);
+      if (difference < bestDifference) {
+        bestDifference = difference;
+        splitAt = index;
+      }
+    }
+    return [words.slice(0, splitAt).join(' '), words.slice(splitAt).join(' ')];
+  }
+  const characters = [...cleaned];
+  if (characters.length <= 8) return [cleaned, ''];
+  const midpoint = Math.ceil(characters.length / 2);
+  return [characters.slice(0, midpoint).join(''), characters.slice(midpoint).join('')];
 }
 
 function getTitleHomePositions(lineIndex, charCount) {
@@ -4784,7 +4839,12 @@ function pulseWorkMedia() {
 }
 
 function titleLineHtml(line, lineIndex) {
-  return `<span class="title-line" data-line="${lineIndex}" data-text="${escapeHtml(line)}">${titleCharsHtml(line, lineIndex)}</span>`;
+  const scriptClass = hasWideTitleCharacters(line) ? ' is-wide-script' : '';
+  return `<span class="title-line${scriptClass}" data-line="${lineIndex}" data-text="${escapeHtml(line)}">${titleCharsHtml(line, lineIndex)}</span>`;
+}
+
+function hasWideTitleCharacters(value) {
+  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(String(value || ''));
 }
 
 function titleCharsHtml(line, lineIndex = 0) {

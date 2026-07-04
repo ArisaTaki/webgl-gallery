@@ -1,16 +1,21 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import crypto from 'node:crypto';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 
 const execFileAsync = promisify(execFile);
+const MAX_INPUT_PIXELS = 160_000_000;
 
 export const imageExtensions = new Set([
   '.bmp',
+  '.avif',
   '.gif',
   '.heic',
+  '.heif',
+  '.jfif',
   '.jpeg',
   '.jpg',
   '.png',
@@ -60,7 +65,14 @@ export async function saveManifest(manifestPath, photos, groups = []) {
     groups,
     photos,
   };
-  await writeFile(manifestPath, `${JSON.stringify(payload, null, 2)}\n`);
+  await mkdir(path.dirname(manifestPath), { recursive: true });
+  const tempPath = `${manifestPath}.${process.pid}.${cryptoRandomSuffix()}.tmp`;
+  try {
+    await writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`);
+    await rename(tempPath, manifestPath);
+  } finally {
+    await rm(tempPath, { force: true }).catch(() => {});
+  }
   return payload;
 }
 
@@ -112,7 +124,7 @@ export async function processImage({ inputPath, mediaDir, id, sourceName, title 
 export async function buildPhotoDerivatives({ inputPath, id, sourceName, title }) {
   const prepared = await prepareSharpInput(inputPath);
   try {
-    const source = sharp(prepared.inputPath, { limitInputPixels: false }).rotate();
+    const source = sharp(prepared.inputPath, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
     const metadata = await source.metadata();
     const blur = await source
       .clone()
@@ -141,19 +153,25 @@ export async function buildPhotoDerivatives({ inputPath, id, sourceName, title }
       });
     }
 
+    const swapsOrientation = [5, 6, 7, 8].includes(Number(metadata.orientation));
+    const displayWidth = swapsOrientation ? metadata.height : metadata.width;
+    const displayHeight = swapsOrientation ? metadata.width : metadata.height;
     return {
       assets,
       photo: {
         id,
         title,
         sourceName,
-        width: metadata.width || 1,
-        height: metadata.height || 1,
-        aspect: (metadata.width || 1) / (metadata.height || 1),
+        width: displayWidth || 1,
+        height: displayHeight || 1,
+        aspect: (displayWidth || 1) / (displayHeight || 1),
         color,
         blurDataUrl: `data:image/webp;base64,${blur.toString('base64')}`,
       },
     };
+  } catch (error) {
+    if ((error as any)?.status) throw error;
+    throw unsupportedImageError(error);
   } finally {
     await prepared.cleanup();
   }
@@ -259,21 +277,38 @@ function sourcePreference(extension) {
 
 async function prepareSharpInput(inputPath) {
   try {
-    await sharp(inputPath, { limitInputPixels: false }).metadata();
+    await sharp(inputPath, { limitInputPixels: MAX_INPUT_PIXELS }).metadata();
     return {
       inputPath,
       cleanup: async () => {},
     };
-  } catch (error) {
+  } catch (sharpError) {
+    if (process.platform !== 'darwin') throw unsupportedImageError(sharpError);
     const tempDir = await mkdtemp(path.join(os.tmpdir(), 'webgl-gallery-'));
     const convertedPath = path.join(tempDir, `${path.basename(inputPath)}.png`);
-    await execFileAsync('sips', ['-s', 'format', 'png', inputPath, '--out', convertedPath]);
-    await sharp(convertedPath, { limitInputPixels: false }).metadata();
-    return {
-      inputPath: convertedPath,
-      cleanup: async () => {
-        await unlink(convertedPath).catch(() => {});
-      },
-    };
+    try {
+      await execFileAsync('sips', ['-s', 'format', 'png', inputPath, '--out', convertedPath]);
+      await sharp(convertedPath, { limitInputPixels: MAX_INPUT_PIXELS }).metadata();
+      return {
+        inputPath: convertedPath,
+        cleanup: async () => {
+          await rm(tempDir, { force: true, recursive: true }).catch(() => {});
+        },
+      };
+    } catch (conversionError) {
+      await rm(tempDir, { force: true, recursive: true }).catch(() => {});
+      throw unsupportedImageError(conversionError);
+    }
   }
+}
+
+function unsupportedImageError(cause) {
+  const error: any = new Error('The uploaded file is not a supported or valid image.');
+  error.status = 415;
+  error.cause = cause;
+  return error;
+}
+
+function cryptoRandomSuffix() {
+  return crypto.randomUUID();
 }

@@ -3,13 +3,12 @@ import { parseCookie, stringifySetCookie } from 'cookie';
 
 const SESSION_COOKIE = 'gallery_admin';
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const processSessionSecret = crypto.randomBytes(32).toString('hex');
 
 export function verifyAdminPassword(password) {
   const supplied = String(password || '');
   const configuredHash = process.env.GALLERY_ADMIN_PASSWORD_HASH;
-  if (!configuredHash) {
-    return timingSafeStringEqual(supplied, process.env.GALLERY_UPLOAD_KEY || '13209');
-  }
+  if (!configuredHash) return false;
   if (configuredHash.startsWith('sha256:')) {
     const digest = crypto.createHash('sha256').update(supplied).digest('hex');
     return timingSafeStringEqual(digest, configuredHash.slice('sha256:'.length));
@@ -21,6 +20,11 @@ export function verifyAdminPassword(password) {
     return timingSafeStringEqual(digest, expected);
   }
   return false;
+}
+
+export function verifyLegacyUploadKey(suppliedKey) {
+  const configuredKey = String(process.env.GALLERY_UPLOAD_KEY || '');
+  return Boolean(configuredKey) && timingSafeStringEqual(String(suppliedKey || ''), configuredKey);
 }
 
 export function createPasswordHash(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -54,6 +58,7 @@ export function clearAdminSessionCookie(request = null) {
 }
 
 export function isAdminRequest(request) {
+  if (!isSameOriginRequest(request)) return false;
   const header = request.headers.cookie || '';
   const cookies = parseCookie(header);
   const token = cookies[SESSION_COOKIE];
@@ -65,6 +70,20 @@ export function isAdminRequest(request) {
   return timingSafeStringEqual(signature, signSession(issuedAt));
 }
 
+function isSameOriginRequest(request) {
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return true;
+  const origin = headerValue(request, 'origin');
+  if (!origin) return true;
+  try {
+    const originHost = new URL(origin).host.toLowerCase();
+    const forwardedHost = headerValue(request, 'x-forwarded-host').split(',')[0]?.trim().toLowerCase();
+    const requestHost = forwardedHost || headerValue(request, 'host').toLowerCase();
+    return Boolean(requestHost) && originHost === requestHost;
+  } catch {
+    return false;
+  }
+}
+
 export function requireAdmin(request, response, next) {
   if (isAdminRequest(request)) {
     next();
@@ -74,7 +93,7 @@ export function requireAdmin(request, response, next) {
 }
 
 function signSession(issuedAt) {
-  const secret = process.env.SESSION_SECRET || process.env.GALLERY_UPLOAD_KEY || 'dev-gallery-session-secret';
+  const secret = process.env.SESSION_SECRET || processSessionSecret;
   return crypto.createHmac('sha256', secret).update(String(issuedAt)).digest('hex');
 }
 

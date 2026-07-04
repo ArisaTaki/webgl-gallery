@@ -14,6 +14,7 @@ import {
   defaultGroup,
   makeUniqueSlug,
   normalizePhotoStatus,
+  normalizeVisitUrl,
   normalizeVisibility,
   nowIso,
   publicPhotoFromRecord,
@@ -55,6 +56,23 @@ class ManifestGalleryStore {
       uploadDir: this.uploadDir,
     });
     await mkdir(this.originalDir, { recursive: true });
+  }
+
+  async migrateStorage(nextStorageConfig) {
+    const state = await this.readState();
+    const migration = await migrateAssetRecords({
+      currentStorage: this.storage,
+      nextStorageConfig,
+      state,
+    });
+    const migratedById = new Map(migration.records.map((asset) => [asset.id, asset]));
+    for (const photo of state.photos) {
+      photo.assets = (photo.assets || []).map((asset) => migratedById.get(asset.id) || asset);
+      Object.assign(photo, publicAssetFields(photo.assets));
+    }
+    await this.writeState(state);
+    this.storage = migration.storage;
+    return migration.summary;
   }
 
   async listPublicGallery({ groupSlug }: any = {}) {
@@ -122,44 +140,50 @@ class ManifestGalleryStore {
     const state = await this.readState();
     const group = resolveGroup(state.groups, groupId);
     const existingSlugs = state.photos.map((photo) => photo.slug);
+    const startingPhotoCount = state.photos.length;
     const added = [];
-    for (const [index, file] of files.entries()) {
-      const stem = path.basename(file.originalname, path.extname(file.originalname));
-      const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
-      const photoTitle = title && files.length === 1
-        ? String(title)
-        : `${titlePrefix} ${String(state.photos.length + index + 1).padStart(3, '0')}`;
-      const processed = await buildPhotoDerivatives({
-        inputPath: file.path,
-        id: photoId,
-        sourceName: file.originalname,
-        title: photoTitle,
-      });
-      const storedAssets = await this.storeAssets({ group, photoId, processed });
-      const photo = {
-        ...processed.photo,
-        id: photoId,
-        groupId: group.id,
-        slug: makeUniqueSlug(photoTitle || stem || photoId, existingSlugs),
-        description: String(description || ''),
-        capturedAt: toIsoOrNull(capturedAt),
-        sortOrder: nextSortOrder(state.photos),
-        status: 'active',
-        visitUrl: '',
-        workMedia: [],
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-        assets: storedAssets,
-      };
-      Object.assign(photo, publicAssetFields(storedAssets));
-      state.photos.push(photo);
-      existingSlugs.push(photo.slug);
-      added.push(photo);
-      await rm(file.path, { force: true }).catch(() => {});
+    try {
+      for (const [index, file] of files.entries()) {
+        const stem = path.basename(file.originalname, path.extname(file.originalname));
+        const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
+        const photoTitle = title && files.length === 1
+          ? String(title)
+          : `${titlePrefix} ${String(startingPhotoCount + index + 1).padStart(3, '0')}`;
+        const processed = await buildPhotoDerivatives({
+          inputPath: file.path,
+          id: photoId,
+          sourceName: file.originalname,
+          title: photoTitle,
+        });
+        const storedAssets = await this.storeAssets({ group, photoId, processed });
+        const photo = {
+          ...processed.photo,
+          id: photoId,
+          groupId: group.id,
+          slug: makeUniqueSlug(photoTitle || stem || photoId, existingSlugs),
+          description: String(description || ''),
+          capturedAt: toIsoOrNull(capturedAt),
+          sortOrder: nextSortOrder(state.photos),
+          status: 'active',
+          visitUrl: '',
+          workMedia: [],
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+          assets: storedAssets,
+        };
+        Object.assign(photo, publicAssetFields(storedAssets));
+        state.photos.push(photo);
+        existingSlugs.push(photo.slug);
+        added.push(photo);
+        await rm(file.path, { force: true }).catch(() => {});
+      }
+      if (!group.coverPhotoId && added[0]) group.coverPhotoId = added[0].id;
+      await this.writeState(state);
+      return buildUploadResult(state, added);
+    } catch (error) {
+      await deleteStoredAssets(this.storage, added.flatMap((photo) => photo.assets || []));
+      throw error;
     }
-    if (!group.coverPhotoId && added[0]) group.coverPhotoId = added[0].id;
-    await this.writeState(state);
-    return buildGalleryPayload(state, { publicOnly: false });
   }
 
   async updatePhoto(id, patch) {
@@ -181,7 +205,7 @@ class ManifestGalleryStore {
       capturedAt: patch.capturedAt === undefined ? photo.capturedAt : toIsoOrNull(patch.capturedAt),
       sortOrder: patch.sortOrder === undefined ? photo.sortOrder : toInt(patch.sortOrder, photo.sortOrder),
       status: patch.status === undefined ? photo.status : normalizePhotoStatus(patch.status),
-      visitUrl: patch.visitUrl === undefined ? photo.visitUrl : String(patch.visitUrl || ''),
+      visitUrl: patch.visitUrl === undefined ? photo.visitUrl : normalizeVisitUrl(patch.visitUrl),
       updatedAt: nowIso(),
     });
     await this.writeState(state);
@@ -195,10 +219,7 @@ class ManifestGalleryStore {
     photo.status = 'deleted';
     photo.updatedAt = nowIso();
     await this.writeState(state);
-    for (const asset of photo.assets || []) {
-      this.storage.deleteAsset(asset).catch(() => {});
-    }
-    return { ok: true };
+    return { ok: true, ...(await assetCleanupResult(this.storage, photo.assets)) };
   }
 
   async reprocessPhoto(id) {
@@ -243,19 +264,7 @@ class ManifestGalleryStore {
   }
 
   async storeAssets({ group, photoId, processed }) {
-    const records = [];
-    for (const asset of processed.assets) {
-      const stored = await this.storage.putAsset({
-        groupSlug: group.slug,
-        photoId,
-        kind: asset.kind,
-        fileName: asset.fileName,
-        buffer: asset.buffer,
-        mimeType: asset.mimeType,
-      });
-      records.push(toAssetRecord({ asset, stored, photoId }));
-    }
-    return records;
+    return storeProcessedAssets(this.storage, { group, photoId, processed });
   }
 
   async readState() {
@@ -346,6 +355,24 @@ class SqliteGalleryStore {
     this.sqlite?.close();
   }
 
+  async migrateStorage(nextStorageConfig) {
+    const migration = await migrateAssetRecords({
+      currentStorage: this.storage,
+      nextStorageConfig,
+      state: await this.readState(),
+    });
+    this.transaction(() => {
+      const update = this.sqlite.prepare(`UPDATE photo_assets
+        SET r2Key = ?, url = ?, sizeBytes = ?, mimeType = ?
+        WHERE id = ?`);
+      for (const asset of migration.records) {
+        update.run(asset.r2Key, asset.url || '', asset.sizeBytes || 0, asset.mimeType, asset.id);
+      }
+    });
+    this.storage = migration.storage;
+    return migration.summary;
+  }
+
   async listPublicGallery({ groupSlug }: any = {}) {
     return buildGalleryPayload(await this.readState(), { publicOnly: true, groupSlug });
   }
@@ -408,47 +435,71 @@ class SqliteGalleryStore {
     const state = await this.readState();
     const group = resolveGroup(state.groups, groupId);
     const existingSlugs = state.photos.map((photo) => photo.slug);
-    for (const [index, file] of files.entries()) {
-      const stem = path.basename(file.originalname, path.extname(file.originalname));
-      const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
-      const photoTitle = title && files.length === 1
-        ? String(title)
-        : `${titlePrefix} ${String(state.photos.length + index + 1).padStart(3, '0')}`;
-      const processed = await buildPhotoDerivatives({
-        inputPath: file.path,
-        id: photoId,
-        sourceName: file.originalname,
-        title: photoTitle,
-      });
-      const storedAssets = await this.storeAssets({ group, photoId, processed });
-      const photo = {
-        ...processed.photo,
-        id: photoId,
-        groupId: group.id,
-        slug: makeUniqueSlug(photoTitle || stem || photoId, existingSlugs),
-        title: photoTitle,
-        description: String(description || ''),
-        capturedAt: toIsoOrNull(capturedAt),
-        sortOrder: nextSortOrder(state.photos),
-        status: 'active',
-        visitUrl: '',
-        workMedia: [],
-        createdAt: nowIso(),
-        updatedAt: nowIso(),
-      };
-      this.transaction(() => {
-        this.insertPhoto(photo);
-        this.insertAssets(storedAssets);
-        if (!group.coverPhotoId) {
-          this.sqlite.prepare('UPDATE groups SET coverPhotoId = ?, updatedAt = ? WHERE id = ?').run(photoId, nowIso(), group.id);
-          group.coverPhotoId = photoId;
+    const startingPhotoCount = state.photos.length;
+    const added = [];
+    const originalCoverPhotoId = group.coverPhotoId;
+    try {
+      for (const [index, file] of files.entries()) {
+        const stem = path.basename(file.originalname, path.extname(file.originalname));
+        const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
+        const photoTitle = title && files.length === 1
+          ? String(title)
+          : `${titlePrefix} ${String(startingPhotoCount + index + 1).padStart(3, '0')}`;
+        const processed = await buildPhotoDerivatives({
+          inputPath: file.path,
+          id: photoId,
+          sourceName: file.originalname,
+          title: photoTitle,
+        });
+        const storedAssets = await this.storeAssets({ group, photoId, processed });
+        const photo = {
+          ...processed.photo,
+          id: photoId,
+          groupId: group.id,
+          slug: makeUniqueSlug(photoTitle || stem || photoId, existingSlugs),
+          title: photoTitle,
+          description: String(description || ''),
+          capturedAt: toIsoOrNull(capturedAt),
+          sortOrder: nextSortOrder(state.photos),
+          status: 'active',
+          visitUrl: '',
+          workMedia: [],
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        };
+        try {
+          this.transaction(() => {
+            this.insertPhoto(photo);
+            this.insertAssets(storedAssets);
+            if (!group.coverPhotoId) {
+              this.sqlite.prepare('UPDATE groups SET coverPhotoId = ?, updatedAt = ? WHERE id = ?').run(photoId, nowIso(), group.id);
+              group.coverPhotoId = photoId;
+            }
+          });
+        } catch (error) {
+          await deleteStoredAssets(this.storage, storedAssets);
+          throw error;
         }
-      });
-      state.photos.push(photo);
-      existingSlugs.push(photo.slug);
-      await rm(file.path, { force: true }).catch(() => {});
+        state.photos.push(photo);
+        existingSlugs.push(photo.slug);
+        added.push({ ...photo, assets: storedAssets });
+        await rm(file.path, { force: true }).catch(() => {});
+      }
+      return buildUploadResult(await this.readState(), added);
+    } catch (error) {
+      if (added.length) {
+        this.transaction(() => {
+          for (const photo of added) {
+            this.sqlite.prepare('DELETE FROM photo_assets WHERE photoId = ?').run(photo.id);
+            this.sqlite.prepare('DELETE FROM photos WHERE id = ?').run(photo.id);
+          }
+          this.sqlite.prepare('UPDATE groups SET coverPhotoId = ?, updatedAt = ? WHERE id = ?')
+            .run(originalCoverPhotoId || null, nowIso(), group.id);
+        });
+        await deleteStoredAssets(this.storage, added.flatMap((photo) => photo.assets || []));
+      }
+      throw error;
     }
-    return this.listAdminGallery();
   }
 
   async updatePhoto(id, patch) {
@@ -464,7 +515,7 @@ class SqliteGalleryStore {
     if (patch.capturedAt !== undefined) update.capturedAt = toIsoOrNull(patch.capturedAt);
     if (patch.sortOrder !== undefined) update.sortOrder = toInt(patch.sortOrder, photo.sortOrder);
     if (patch.status !== undefined) update.status = normalizePhotoStatus(patch.status);
-    if (patch.visitUrl !== undefined) update.visitUrl = String(patch.visitUrl || '');
+    if (patch.visitUrl !== undefined) update.visitUrl = normalizeVisitUrl(patch.visitUrl);
     if (patch.slug !== undefined) {
       update.slug = makeUniqueSlug(
         patch.slug || patch.title || photo.title,
@@ -480,10 +531,7 @@ class SqliteGalleryStore {
     const photo = state.photos.find((item) => item.id === id || item.slug === id);
     if (!photo) throw httpError(404, 'Photo not found.');
     this.sqlite.prepare('UPDATE photos SET status = ?, updatedAt = ? WHERE id = ?').run('deleted', nowIso(), photo.id);
-    for (const asset of photo.assets || []) {
-      this.storage.deleteAsset(asset).catch(() => {});
-    }
-    return { ok: true };
+    return { ok: true, ...(await assetCleanupResult(this.storage, photo.assets)) };
   }
 
   async reprocessPhoto(id) {
@@ -534,19 +582,7 @@ class SqliteGalleryStore {
   }
 
   async storeAssets({ group, photoId, processed }) {
-    const records = [];
-    for (const asset of processed.assets) {
-      const stored = await this.storage.putAsset({
-        groupSlug: group.slug,
-        photoId,
-        kind: asset.kind,
-        fileName: asset.fileName,
-        buffer: asset.buffer,
-        mimeType: asset.mimeType,
-      });
-      records.push(toAssetRecord({ asset, stored, photoId }));
-    }
-    return records;
+    return storeProcessedAssets(this.storage, { group, photoId, processed });
   }
 
   async readState() {
@@ -688,6 +724,21 @@ class PostgresGalleryStore {
 
   async init() {}
 
+  async migrateStorage(nextStorageConfig) {
+    const migration = await migrateAssetRecords({
+      currentStorage: this.storage,
+      nextStorageConfig,
+      state: await this.readState(),
+    });
+    await this.db.transaction(async (tx) => {
+      for (const asset of migration.records) {
+        await tx.update(photoAssets).set(dbAssetValues(asset)).where(eq(photoAssets.id, asset.id));
+      }
+    });
+    this.storage = migration.storage;
+    return migration.summary;
+  }
+
   async listPublicGallery({ groupSlug }: any = {}) {
     return buildGalleryPayload(await this.readState(), { publicOnly: true, groupSlug });
   }
@@ -756,58 +807,74 @@ class PostgresGalleryStore {
     const state = await this.readState();
     const group = resolveGroup(state.groups, groupId);
     const existingSlugs = state.photos.map((photo) => photo.slug);
-    for (const [index, file] of files.entries()) {
-      const stem = path.basename(file.originalname, path.extname(file.originalname));
-      const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
-      const photoTitle = title && files.length === 1
-        ? String(title)
-        : `${titlePrefix} ${String(state.photos.length + index + 1).padStart(3, '0')}`;
-      const processed = await buildPhotoDerivatives({
-        inputPath: file.path,
-        id: photoId,
-        sourceName: file.originalname,
-        title: photoTitle,
-      });
-      const storedAssets = [];
-      for (const asset of processed.assets) {
-        const stored = await this.storage.putAsset({
-          groupSlug: group.slug,
-          photoId,
-          kind: asset.kind,
-          fileName: asset.fileName,
-          buffer: asset.buffer,
-          mimeType: asset.mimeType,
+    const startingPhotoCount = state.photos.length;
+    const added = [];
+    const originalCoverPhotoId = group.coverPhotoId;
+    try {
+      for (const [index, file] of files.entries()) {
+        const stem = path.basename(file.originalname, path.extname(file.originalname));
+        const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
+        const photoTitle = title && files.length === 1
+          ? String(title)
+          : `${titlePrefix} ${String(startingPhotoCount + index + 1).padStart(3, '0')}`;
+        const processed = await buildPhotoDerivatives({
+          inputPath: file.path,
+          id: photoId,
+          sourceName: file.originalname,
+          title: photoTitle,
         });
-        storedAssets.push(toAssetRecord({ asset, stored, photoId }));
-      }
-      const photo = {
-        id: photoId,
-        groupId: group.id,
-        slug: makeUniqueSlug(photoTitle || stem || photoId, existingSlugs),
-        title: photoTitle,
-        description: String(description || ''),
-        capturedAt: capturedAt ? new Date(capturedAt) : null,
-        sourceName: file.originalname,
-        width: processed.photo.width,
-        height: processed.photo.height,
-        aspect: processed.photo.aspect,
-        color: processed.photo.color,
-        blurDataUrl: processed.photo.blurDataUrl,
-        sortOrder: nextSortOrder(state.photos),
-        status: 'active',
-      };
-      await this.db.transaction(async (tx) => {
-        await tx.insert(photoRows).values(photo);
-        await tx.insert(photoAssets).values(storedAssets.map(dbAssetValues));
-        if (!group.coverPhotoId) {
-          await tx.update(galleryGroups).set({ coverPhotoId: photoId }).where(eq(galleryGroups.id, group.id));
+        const storedAssets = await storeProcessedAssets(this.storage, { group, photoId, processed });
+        const photo = {
+          id: photoId,
+          groupId: group.id,
+          slug: makeUniqueSlug(photoTitle || stem || photoId, existingSlugs),
+          title: photoTitle,
+          description: String(description || ''),
+          capturedAt: capturedAt ? new Date(capturedAt) : null,
+          sourceName: file.originalname,
+          width: processed.photo.width,
+          height: processed.photo.height,
+          aspect: processed.photo.aspect,
+          color: processed.photo.color,
+          blurDataUrl: processed.photo.blurDataUrl,
+          sortOrder: nextSortOrder(state.photos),
+          status: 'active',
+        };
+        try {
+          await this.db.transaction(async (tx) => {
+            await tx.insert(photoRows).values(photo);
+            await tx.insert(photoAssets).values(storedAssets.map(dbAssetValues));
+            if (!group.coverPhotoId) {
+              await tx.update(galleryGroups).set({ coverPhotoId: photoId }).where(eq(galleryGroups.id, group.id));
+            }
+          });
+          if (!group.coverPhotoId) group.coverPhotoId = photoId;
+        } catch (error) {
+          await deleteStoredAssets(this.storage, storedAssets);
+          throw error;
         }
-      });
-      existingSlugs.push(photo.slug);
-      state.photos.push({ ...photo, capturedAt: toIsoOrNull(capturedAt) });
-      await rm(file.path, { force: true }).catch(() => {});
+        existingSlugs.push(photo.slug);
+        const addedPhoto = { ...photo, capturedAt: toIsoOrNull(capturedAt), assets: storedAssets };
+        state.photos.push(addedPhoto);
+        added.push(addedPhoto);
+        await rm(file.path, { force: true }).catch(() => {});
+      }
+      return buildUploadResult(await this.readState(), added);
+    } catch (error) {
+      if (added.length) {
+        await this.db.transaction(async (tx) => {
+          for (const photo of added) {
+            await tx.delete(photoAssets).where(eq(photoAssets.photoId, photo.id));
+            await tx.delete(photoRows).where(eq(photoRows.id, photo.id));
+          }
+          await tx.update(galleryGroups)
+            .set({ coverPhotoId: originalCoverPhotoId || null, updatedAt: new Date() })
+            .where(eq(galleryGroups.id, group.id));
+        });
+        await deleteStoredAssets(this.storage, added.flatMap((photo) => photo.assets || []));
+      }
+      throw error;
     }
-    return this.listAdminGallery();
   }
 
   async updatePhoto(id, patch) {
@@ -823,7 +890,7 @@ class PostgresGalleryStore {
     if (patch.capturedAt !== undefined) update.capturedAt = patch.capturedAt ? new Date(patch.capturedAt) : null;
     if (patch.sortOrder !== undefined) update.sortOrder = toInt(patch.sortOrder, photo.sortOrder);
     if (patch.status !== undefined) update.status = normalizePhotoStatus(patch.status);
-    if (patch.visitUrl !== undefined) update.visitUrl = String(patch.visitUrl || '');
+    if (patch.visitUrl !== undefined) update.visitUrl = normalizeVisitUrl(patch.visitUrl);
     if (patch.slug !== undefined) {
       update.slug = makeUniqueSlug(
         patch.slug || patch.title || photo.title,
@@ -843,10 +910,7 @@ class PostgresGalleryStore {
     const photo = state.photos.find((item) => item.id === id || item.slug === id);
     if (!photo) throw httpError(404, 'Photo not found.');
     await this.db.update(photoRows).set({ status: 'deleted', updatedAt: new Date() }).where(eq(photoRows.id, photo.id));
-    for (const asset of photo.assets || []) {
-      this.storage.deleteAsset(asset).catch(() => {});
-    }
-    return { ok: true };
+    return { ok: true, ...(await assetCleanupResult(this.storage, photo.assets)) };
   }
 
   async reprocessPhoto(id) {
@@ -951,7 +1015,7 @@ function normalizeManifestPhoto(photo, index) {
     blurDataUrl: photo.blurDataUrl || '',
     sortOrder: toInt(photo.sortOrder, photo.index || index + 1),
     status: normalizePhotoStatus(photo.status),
-    visitUrl: photo.visitUrl || photo.visit || '',
+    visitUrl: normalizeVisitUrl(photo.visitUrl || photo.visit),
     workMedia: Array.isArray(photo.workMedia) ? photo.workMedia : [],
     createdAt: photo.createdAt || nowIso(),
     updatedAt: photo.updatedAt || nowIso(),
@@ -1015,8 +1079,102 @@ function buildGalleryPayload(state, { publicOnly, groupSlug }: any = {}) {
   };
 }
 
+function buildUploadResult(state, added) {
+  const gallery = buildGalleryPayload(state, { publicOnly: false });
+  const addedIds = new Set(added.map((photo) => photo.id));
+  return {
+    ...gallery,
+    uploadedCount: addedIds.size,
+    addedPhotos: gallery.photos.filter((photo) => addedIds.has(photo.id)),
+  };
+}
+
+async function migrateAssetRecords({ currentStorage, nextStorageConfig, state }) {
+  const storage = createStorage({
+    mediaDir: nextStorageConfig?.mediaDir || '',
+    originalDir: nextStorageConfig?.originalDir || '',
+    storageConfig: nextStorageConfig,
+  });
+  const groupsById = new Map<string, any>((state.groups || []).map((group) => [group.id, group]));
+  const records = [];
+  const failures = [];
+  for (const photo of state.photos.filter((item) => item.status !== 'deleted')) {
+    const group = groupsById.get(photo.groupId) || defaultGroup();
+    for (const asset of photo.assets || []) {
+      try {
+        const buffer = await currentStorage.getAssetBuffer(asset);
+        const stored = await storage.putAsset({
+          groupSlug: group.slug,
+          photoId: photo.id,
+          kind: asset.kind,
+          fileName: path.basename(asset.r2Key || asset.key || `${photo.id}-${asset.kind}`),
+          buffer,
+          mimeType: asset.mimeType,
+        });
+        records.push({
+          ...asset,
+          r2Key: stored.key,
+          url: stored.url,
+          sizeBytes: stored.sizeBytes,
+          mimeType: stored.mimeType || asset.mimeType,
+        });
+      } catch (error: any) {
+        failures.push({
+          photoId: photo.id,
+          kind: asset.kind,
+          message: error.message || 'Asset copy failed.',
+        });
+      }
+    }
+  }
+  return {
+    records,
+    storage,
+    summary: {
+      attempted: records.length + failures.length,
+      copied: records.length,
+      failed: failures.length,
+      failures,
+    },
+  };
+}
+
+async function storeProcessedAssets(storage, { group, photoId, processed }) {
+  const records = [];
+  try {
+    for (const asset of processed.assets) {
+      const stored = await storage.putAsset({
+        groupSlug: group.slug,
+        photoId,
+        kind: asset.kind,
+        fileName: asset.fileName,
+        buffer: asset.buffer,
+        mimeType: asset.mimeType,
+      });
+      records.push(toAssetRecord({ asset, stored, photoId }));
+    }
+    return records;
+  } catch (error) {
+    await deleteStoredAssets(storage, records);
+    throw error;
+  }
+}
+
+async function deleteStoredAssets(storage, assets) {
+  await Promise.allSettled((assets || []).map((asset) => storage.deleteAsset(asset)));
+}
+
+async function assetCleanupResult(storage, assets = []) {
+  const results = await Promise.allSettled((assets || []).map((asset) => storage.deleteAsset(asset)));
+  return {
+    deletedAssets: results.filter((result) => result.status === 'fulfilled').length,
+    cleanupFailed: results.filter((result) => result.status === 'rejected').length,
+  };
+}
+
 function resolveGroup(groups, idOrSlug) {
-  const group = groups.find((item) => item.id === idOrSlug || item.slug === idOrSlug) || groups[0];
+  const group = groups.find((item) => item.id === idOrSlug || item.slug === idOrSlug);
+  if (!idOrSlug && groups[0]) return groups[0];
   if (!group) throw httpError(404, 'Group not found.');
   return group;
 }
@@ -1087,7 +1245,7 @@ function dbPhotoToRecord(photo) {
     blurDataUrl: photo.blurDataUrl || '',
     sortOrder: photo.sortOrder || 0,
     status: normalizePhotoStatus(photo.status),
-    visitUrl: photo.visitUrl || '',
+    visitUrl: normalizeVisitUrl(photo.visitUrl),
     workMedia: safeJsonArray(photo.workMedia),
     createdAt: photo.createdAt?.toISOString?.() || photo.createdAt || nowIso(),
     updatedAt: photo.updatedAt?.toISOString?.() || photo.updatedAt || nowIso(),

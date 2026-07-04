@@ -16,7 +16,7 @@ async function staticChecks() {
     ['studio admin login', main.includes("fetch('/api/admin/login'")],
     ['studio dashboard layout', main.includes('studio-dashboard') && main.includes('data-studio-group-filter')],
     ['studio upload panel', main.includes('studio-upload-panel') && main.includes('studio-inspector')],
-    ['upload key env', server.includes("process.env.GALLERY_UPLOAD_KEY || '13209'")],
+    ['explicit legacy upload key', server.includes('verifyLegacyUploadKey') && server.includes("request.headers['x-gallery-key']")],
     ['multer file limit', server.includes("upload.array('photos', 24)")],
     ['webp variants', pipeline.includes("{ key: 'thumb'") && pipeline.includes("{ key: 'large'")],
     ['readme studio docs', readme.includes('http://localhost:5280/studio') && readme.includes('GALLERY_ADMIN_PASSWORD_HASH')],
@@ -161,10 +161,11 @@ async function run() {
     await navigate(client, LOCAL_URL);
     await waitFor(client, 'document.querySelector(".gallery-shell") && document.querySelector(".studio-panel")', 'home shell');
     for (const item of [
-      ['n', 'KeyN', 78],
-      ['i', 'KeyI', 73],
-      ['a', 'KeyA', 65],
-      ['n', 'KeyN', 78],
+      ['w', 'KeyW', 87],
+      ['e', 'KeyE', 69],
+      ['b', 'KeyB', 66],
+      ['g', 'KeyG', 71],
+      ['l', 'KeyL', 76],
     ]) {
       await key(client, ...item);
     }

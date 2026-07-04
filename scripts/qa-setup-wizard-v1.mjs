@@ -13,6 +13,8 @@ const originalDir = path.join(tempRoot, 'originals');
 const uploadDir = path.join(tempRoot, 'uploads');
 const sqlitePath = path.join(tempRoot, '.gallery', 'gallery.sqlite');
 const configPath = path.join(tempRoot, '.gallery', 'config.json');
+const migratedMediaDir = path.join(tempRoot, 'media-migrated');
+const migratedOriginalDir = path.join(tempRoot, 'originals-migrated');
 const port = await getFreePort();
 const serverUrl = `http://127.0.0.1:${port}`;
 const root = path.resolve(new URL('..', import.meta.url).pathname);
@@ -66,6 +68,18 @@ try {
   const after = await fetchJson('/api/setup/status');
   const blockedSave = await postJson('/api/setup/save', { storageKind: 'local' });
   const login = await loginJson('/api/admin/login', { password: ADMIN_PASSWORD });
+  const migratedStorage = await postJson('/api/setup/save', {
+    databaseKind: 'sqlite',
+    mediaDir: migratedMediaDir,
+    originalDir: migratedOriginalDir,
+    sqlitePath,
+    storageKind: 'local',
+  }, { Cookie: login.cookie });
+  const blockedDatabaseChange = await postJson('/api/setup/save', {
+    databaseKind: 'json',
+    manifestPath: path.join(tempRoot, 'other.json'),
+    storageKind: 'local',
+  }, { Cookie: login.cookie });
   const unlockedStatus = await fetchJson('/api/setup/status', { Cookie: login.cookie });
   const photos = await fetchJson('/api/photos');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
@@ -90,11 +104,17 @@ try {
   if (login.status !== 200 || login.body?.authenticated !== true) {
     failures.push(`Expected new admin password to work, got ${JSON.stringify(login)}.`);
   }
-  if (unlockedStatus.locked || unlockedStatus.storage?.mediaDir !== mediaDir || unlockedStatus.database?.sqlitePath !== sqlitePath) {
+  if (migratedStorage.status !== 200 || migratedStorage.body?.storageMigration?.failed !== 0) {
+    failures.push(`Expected authenticated local storage migration to succeed, got ${JSON.stringify(migratedStorage)}.`);
+  }
+  if (blockedDatabaseChange.status !== 409) {
+    failures.push(`Expected configured database target change to be blocked, got ${JSON.stringify(blockedDatabaseChange)}.`);
+  }
+  if (unlockedStatus.locked || unlockedStatus.storage?.mediaDir !== migratedMediaDir || unlockedStatus.database?.sqlitePath !== sqlitePath) {
     failures.push(`Expected admin setup status to include full config, got ${JSON.stringify(unlockedStatus)}.`);
   }
   if (!Array.isArray(photos)) failures.push('/api/photos should stay a flat array after setup.');
-  if (config.database?.kind !== 'sqlite' || config.storage?.kind !== 'local' || !config.auth?.adminPasswordHash) {
+  if (config.database?.kind !== 'sqlite' || config.storage?.kind !== 'local' || config.storage?.mediaDir !== migratedMediaDir || !config.auth?.adminPasswordHash) {
     failures.push(`Expected config file to persist local sqlite setup, got ${JSON.stringify(config)}.`);
   }
   if (!config.auth?.sessionSecret || config.auth.sessionSecret === 'user-supplied-session-secret') {
@@ -160,10 +180,10 @@ async function fetchJson(pathname, headers = {}) {
   return response.json();
 }
 
-async function postJson(pathname, payload) {
+async function postJson(pathname, payload, headers = {}) {
   const response = await fetch(`${serverUrl}${pathname}`, {
     body: JSON.stringify(payload),
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     method: 'POST',
   });
   return {
