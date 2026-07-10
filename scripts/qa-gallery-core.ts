@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import {
   defaultGroup,
   makeR2Key,
@@ -111,6 +112,38 @@ try {
   );
   assert.equal((await readdir(migratedMedia, { recursive: true })).filter((name) => name.endsWith('.webp')).length, 3);
 
+  const legacySqlitePath = path.join(tempRoot, 'legacy', 'gallery.sqlite');
+  await mkdir(path.dirname(legacySqlitePath), { recursive: true });
+  const legacySqlite = new DatabaseSync(legacySqlitePath);
+  legacySqlite.exec(`CREATE TABLE groups (
+    id TEXT PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    coverPhotoId TEXT,
+    sortOrder INTEGER NOT NULL DEFAULT 0,
+    visibility TEXT NOT NULL DEFAULT 'public',
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  )`);
+  legacySqlite.close();
+  const upgradedStore = createGalleryStore({
+    dataDir: path.join(tempRoot, 'legacy', 'data'),
+    manifestPath: path.join(tempRoot, 'legacy', 'data', 'photos.json'),
+    mediaDir: path.join(tempRoot, 'legacy', 'media'),
+    originalDir: path.join(tempRoot, 'legacy', 'originals'),
+    uploadDir: path.join(tempRoot, 'legacy', 'uploads'),
+    runtimeConfig: {
+      database: { kind: 'sqlite', sqlitePath: legacySqlitePath, sqliteAvailable: true },
+      storage: { kind: 'local', mediaDir: path.join(tempRoot, 'legacy', 'media'), originalDir: path.join(tempRoot, 'legacy', 'originals') },
+    },
+  });
+  await upgradedStore.init();
+  const upgradedGroup = await upgradedStore.createGroup({ title: 'Accent Album', accentColor: '#4466aa' });
+  assert.equal(upgradedGroup.accentColor, '#4466aa');
+  assert.equal((await upgradedStore.listAdminGallery()).groups.find((item) => item.id === upgradedGroup.id)?.accentColor, '#4466aa');
+  await upgradedStore.close();
+
   const localProbe = await verifyLocalStorageConfig({
     kind: 'local',
     mediaDir: path.join(tempRoot, 'media'),
@@ -204,7 +237,7 @@ try {
     }
   }
 
-  console.log(JSON.stringify({ ok: true, tests: 20 }, null, 2));
+  console.log(JSON.stringify({ ok: true, tests: 22 }, null, 2));
 } finally {
   await rm(tempRoot, { force: true, recursive: true }).catch(() => {});
 }

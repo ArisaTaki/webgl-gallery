@@ -100,7 +100,7 @@ try {
   await proxiedLogin.json();
 
   const groupCreate = await adminJson(cookie, '/api/admin/groups', {
-    body: JSON.stringify({ title: 'Family Days', slug: 'family-days', description: 'Shared album' }),
+    body: JSON.stringify({ title: 'Family Days', slug: 'family-days', description: 'Shared album', accentColor: '#4466aa' }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   });
@@ -149,7 +149,9 @@ try {
   if (!loginBody.ok || !cookie) failures.push(`Expected login cookie, got body=${JSON.stringify(loginBody)} cookie=${cookie}.`);
   if (/;\s*Secure/i.test(loginSetCookie)) failures.push(`Expected direct HTTP login cookie to omit Secure, got ${loginSetCookie}.`);
   if (!/;\s*Secure/i.test(proxiedSetCookie)) failures.push(`Expected HTTPS-proxied login cookie to include Secure, got ${proxiedSetCookie}.`);
-  if (groupCreate.group.slug !== 'family-days') failures.push(`Expected group slug family-days, got ${JSON.stringify(groupCreate)}.`);
+  if (groupCreate.group.slug !== 'family-days' || groupCreate.group.accentColor !== '#4466aa') {
+    failures.push(`Expected group slug and accent color to persist, got ${JSON.stringify(groupCreate)}.`);
+  }
   if (failedBatch.status !== 415 || galleryAfterFailedBatch.photos.length !== 0 || mediaAfterFailedBatch.some((item) => item.endsWith('.webp'))) {
     failures.push(`Expected failed mixed batch to roll back metadata and assets, got ${JSON.stringify({ failedBatch, galleryAfterFailedBatch, mediaAfterFailedBatch })}.`);
   }
@@ -164,7 +166,7 @@ try {
   if (reprocess.status !== 409 || !String(reprocess.body?.message || '').includes('Original asset is not available')) {
     failures.push(`Expected reprocess without an original asset to return 409, got ${JSON.stringify(reprocess)}.`);
   }
-  if (publicGallery.count !== 2 || !publicGallery.groups.some((group) => group.slug === 'family-days')) {
+  if (publicGallery.count !== 2 || !publicGallery.groups.some((group) => group.slug === 'family-days' && group.accentColor === '#4466aa')) {
     failures.push(`Expected filtered public gallery count 2 with family-days group, got ${JSON.stringify(publicGallery)}.`);
   }
   if (missingMedia.status !== 404 || String(missingMedia.headers.get('content-type')).includes('text/html')) {

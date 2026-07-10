@@ -3308,6 +3308,107 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   padding: 0;
 }
 
+.studio-shell:has(.studio-login-form:not([hidden])) {
+  display: grid;
+  place-items: center;
+}
+
+.studio-login-form {
+  align-self: center;
+  justify-self: center;
+  grid-template-rows: auto auto auto;
+  align-content: start;
+  width: min(420px, calc(100vw - 32px));
+  height: auto;
+  min-height: 0;
+  max-height: calc(100vh - 48px);
+  gap: 20px;
+  padding: 34px;
+}
+
+.studio-login-form > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.studio-login-form label {
+  gap: 8px;
+}
+
+.studio-login-form input[type="password"] {
+  min-height: 46px;
+}
+
+.studio-login-form .studio-actions {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.studio-login-form .studio-actions button {
+  min-height: 44px;
+}
+
+.studio-loading {
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  border: 1px solid var(--studio-line-strong);
+  border-radius: 8px;
+  background: rgba(11, 13, 12, 0.94);
+  color: var(--studio-ink);
+  text-align: center;
+  backdrop-filter: blur(10px);
+}
+
+.studio-loading[hidden] {
+  display: none;
+}
+
+.studio-loading-mark {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  gap: 5px;
+}
+
+.studio-loading-mark i {
+  width: 4px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--studio-accent);
+  animation: studio-loading-pulse 900ms ease-in-out infinite;
+}
+
+.studio-loading-mark i:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.studio-loading-mark i:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.studio-loading > div {
+  display: grid;
+  gap: 6px;
+}
+
+.studio-loading strong {
+  font-size: 15px;
+}
+
+.studio-loading small {
+  color: rgba(225, 231, 223, 0.52);
+  font-size: 10px;
+}
+
+@keyframes studio-loading-pulse {
+  0%, 100% { height: 10px; opacity: 0.45; }
+  50% { height: 28px; opacity: 1; }
+}
+
 .studio-admin {
   display: grid;
   grid-template-rows: 68px minmax(0, 1fr);
@@ -3320,6 +3421,13 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   border-radius: 8px;
   background: var(--studio-panel);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+.studio-admin > [data-studio-admin-body] {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .studio-admin-head {
@@ -3385,6 +3493,7 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   grid-template-columns: 232px minmax(420px, 1fr) 320px;
   gap: 0;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 
@@ -3418,12 +3527,22 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 
 .studio-inspector {
   display: block;
+  height: 100%;
   overflow: hidden auto;
   padding: 15px;
   border-left: 1px solid var(--studio-line);
   background: #101211;
   scrollbar-width: thin;
   scrollbar-color: rgba(var(--studio-accent-rgb), 0.32) transparent;
+}
+
+.studio-admin .studio-album-nav button[style] svg {
+  color: var(--album-color);
+}
+
+.studio-admin .studio-album-nav button[style].is-active {
+  border-color: color-mix(in srgb, var(--album-color) 48%, transparent);
+  background: color-mix(in srgb, var(--album-color) 15%, #141615);
 }
 
 .studio-overview {
@@ -4092,6 +4211,34 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 .studio-field > span {
   color: rgba(225, 231, 223, 0.56);
   font-size: 10px;
+}
+
+.studio-color-control {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  min-height: 46px;
+  gap: 10px;
+  padding: 5px 9px 5px 5px;
+  border: 1px solid var(--studio-line-strong);
+  border-radius: 6px;
+  background: #0c0e0d;
+}
+
+.studio-admin .studio-color-control input[type="color"] {
+  width: 40px;
+  height: 34px;
+  min-height: 34px;
+  padding: 2px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.studio-color-control strong {
+  color: rgba(225, 231, 223, 0.58);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .studio-form input,

@@ -84,16 +84,19 @@ async function createStudioFixture() {
     headers: { Cookie: cookie, ...(options.headers || {}) },
   });
   const groupIds = [];
-  for (const [title, slug] of [['城市散步', 'city-walks'], ['夏日海岸', 'summer-coast'], ['日常片段', 'daily-scenes']]) {
+  for (const [title, slug, accentColor] of [['城市散步', 'city-walks', '#4b82a8'], ['夏日海岸', 'summer-coast', '#c47755'], ['日常片段', 'daily-scenes', '#778e62']]) {
     const response = await request('/api/admin/groups', {
-      body: JSON.stringify({ title, slug, description: `${title}的照片` }),
+      body: JSON.stringify({ title, slug, description: `${title}的照片`, accentColor }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     });
     groupIds.push((await response.json()).group.id);
   }
 
-  const dimensions = [[1600, 1067], [1000, 1500], [1500, 1000], [1200, 1200]];
+  const dimensions = [
+    [1600, 1067], [1000, 1500], [1500, 1000], [1200, 1200],
+    [1440, 960], [960, 1440], [1360, 1020], [1020, 1360],
+  ];
   for (let groupIndex = 0; groupIndex < groupIds.length; groupIndex += 1) {
     const form = new FormData();
     form.append('groupId', groupIds[groupIndex]);
@@ -208,12 +211,30 @@ function assert(condition, message) {
 const fixture = await createStudioFixture();
 const client = await connect();
 try {
-  await setViewport(client, 1440, 960);
+  await send(client, 'Network.enable');
+  await send(client, 'Network.clearBrowserCookies');
+  await setViewport(client, 1920, 1080);
   await send(client, 'Page.navigate', { url: localUrl });
   await waitFor(client, `location.href === ${JSON.stringify(localUrl)}`, 'Studio navigation');
   await waitFor(client, 'document.readyState !== "loading"', 'document load');
   await waitFor(client, 'document.querySelector(".gallery-shell")', 'gallery shell');
-  await waitFor(client, 'document.querySelector(".studio-login-form")', 'Studio login');
+  await waitFor(client, 'document.querySelector(".studio-login-form") && !document.querySelector(".studio-login-form").hidden', 'Studio login');
+  const loginLayout = await evaluate(client, `(() => {
+    const form = document.querySelector('.studio-login-form');
+    const input = form.querySelector('input[type="password"]');
+    const button = form.querySelector('button[type="submit"]');
+    const loadingBar = document.querySelector('.studio-loading-mark i');
+    return {
+      width: form.getBoundingClientRect().width,
+      height: form.getBoundingClientRect().height,
+      inputHeight: input.getBoundingClientRect().height,
+      buttonHeight: button.getBoundingClientRect().height,
+      loadingAnimation: getComputedStyle(loadingBar).animationName,
+    };
+  })()`);
+  assert(loginLayout.width <= 430 && loginLayout.height <= 430, `Studio login should stay compact: ${JSON.stringify(loginLayout)}`);
+  assert(loginLayout.inputHeight <= 56 && loginLayout.buttonHeight <= 56, `Studio login controls should not stretch: ${JSON.stringify(loginLayout)}`);
+  assert(loginLayout.loadingAnimation === 'studio-loading-pulse', `Studio loading indicator should be animated: ${JSON.stringify(loginLayout)}`);
   await evaluate(client, `(() => {
     const form = document.querySelector('.studio-login-form');
     form.querySelector('input[name="password"]').value = ${JSON.stringify(ADMIN_PASSWORD)};
@@ -227,6 +248,8 @@ try {
     const dashboard = document.querySelector('.studio-dashboard');
     const tile = document.querySelector('.studio-photo-tile');
     const grid = document.querySelector('.studio-photo-grid');
+    const adminBody = document.querySelector('[data-studio-admin-body]');
+    const admin = document.querySelector('[data-studio-admin]');
     const columns = getComputedStyle(dashboard).gridTemplateColumns.split(' ').filter(Boolean);
     return {
       columns: columns.length,
@@ -239,6 +262,9 @@ try {
       galleryChromeHidden: getComputedStyle(document.querySelector('.about-link')).opacity === '0',
       gridClientHeight: grid.clientHeight,
       gridScrollHeight: grid.scrollHeight,
+      dashboardBottomGap: Math.abs(adminBody.getBoundingClientRect().bottom - dashboard.getBoundingClientRect().bottom),
+      adminBodyBottomGap: Math.abs(admin.getBoundingClientRect().bottom - adminBody.getBoundingClientRect().bottom),
+      coloredAlbumLinks: [...document.querySelectorAll('.studio-album-nav button[style]')].filter((button) => button.style.getPropertyValue('--album-color')).length,
     };
   })()`);
   assert(desktop.columns === 3, `Desktop dashboard should have 3 columns: ${JSON.stringify(desktop)}`);
@@ -247,6 +273,8 @@ try {
   assert(desktop.bodyOverflow <= 1, `Desktop Studio overflows horizontally: ${JSON.stringify(desktop)}`);
   assert(desktop.galleryChromeHidden, `Gallery chrome should be hidden in Studio: ${JSON.stringify(desktop)}`);
   assert(desktop.gridScrollHeight > desktop.gridClientHeight, `Photo grid should be scrollable: ${JSON.stringify(desktop)}`);
+  assert(desktop.dashboardBottomGap <= 1 && desktop.adminBodyBottomGap <= 1, `Studio dashboard should fill the available height: ${JSON.stringify(desktop)}`);
+  assert(desktop.coloredAlbumLinks >= 3, `Album navigation should reflect album theme colors: ${JSON.stringify(desktop)}`);
 
   await evaluate(client, `document.querySelector('[data-action="studio-toggle-create"]').click()`);
   await waitFor(client, 'document.querySelector("[data-studio-create-dialog]")?.open', 'create album dialog');
@@ -254,8 +282,9 @@ try {
     open: document.querySelector('[data-studio-create-dialog]')?.open,
     modalForm: Boolean(document.querySelector('[data-studio-create-dialog] .studio-group-form')),
     sidebarForm: Boolean(document.querySelector('.studio-sidebar .studio-group-form')),
+    accentControl: Boolean(document.querySelector('[data-studio-create-dialog] input[name="accentColor"][type="color"]')),
   })`);
-  assert(dialog.open && dialog.modalForm && !dialog.sidebarForm, `Create album should use a modal dialog: ${JSON.stringify(dialog)}`);
+  assert(dialog.open && dialog.modalForm && !dialog.sidebarForm && dialog.accentControl, `Create album should use a modal dialog with a theme color control: ${JSON.stringify(dialog)}`);
   await screenshot(client, '/tmp/studio-ui-v3-dialog.png');
   await evaluate(client, `document.querySelector('[data-action="studio-close-create"]').click()`);
   await waitFor(client, '!document.querySelector("[data-studio-create-dialog]")', 'closed create album dialog');
@@ -277,7 +306,24 @@ try {
     inspectorVisible: document.querySelector('.studio-inspector-preview')?.getBoundingClientRect().height > 0,
     scrollTop: document.querySelector('.studio-photo-grid').scrollTop,
   })`);
-  assert(selection.forms === 1 && selection.selected === 1 && selection.inspectorVisible && selection.scrollTop > 0, `Photo selection or scroll preservation failed: ${JSON.stringify(selection)}`);
+  assert(selection.forms === 1 && selection.selected === 1 && selection.inspectorVisible, `Photo selection failed: ${JSON.stringify(selection)}`);
+
+  await setViewport(client, 1920, 760);
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  const inspectorScroll = await evaluate(client, `(() => {
+    const inspector = document.querySelector('.studio-inspector');
+    const before = inspector.scrollTop;
+    inspector.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 420 }));
+    return {
+      before,
+      after: inspector.scrollTop,
+      clientHeight: inspector.clientHeight,
+      scrollHeight: inspector.scrollHeight,
+      overflowY: getComputedStyle(inspector).overflowY,
+    };
+  })()`);
+  assert(inspectorScroll.scrollHeight > inspectorScroll.clientHeight && inspectorScroll.after > inspectorScroll.before, `Photo inspector should scroll independently: ${JSON.stringify(inspectorScroll)}`);
+  await setViewport(client, 1920, 1080);
 
   await evaluate(client, `(() => {
     const search = document.querySelector('[data-studio-search]');
@@ -335,17 +381,41 @@ try {
   assert(mobile.tileColumns <= 2, `Mobile photo grid should use at most 2 columns: ${JSON.stringify(mobile)}`);
   await screenshot(client, '/tmp/studio-ui-v2-mobile.png');
 
+  await setViewport(client, 1920, 1080);
+  await evaluate(client, `document.querySelector('[data-action="close-studio"]').click()`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index"', 'gallery index');
+  await evaluate(client, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "detail"', 'album detail');
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+  const galleryDetail = await evaluate(client, `({
+    date: document.querySelector('[data-meta-date]')?.textContent.trim(),
+    count: document.querySelector('[data-meta-count]')?.textContent.trim(),
+    access: document.querySelector('[data-meta-access]')?.textContent.trim(),
+    description: document.querySelector('[data-shadow-description]')?.textContent.trim(),
+    nav: document.querySelector('.project-nav')?.textContent.trim(),
+    action: document.querySelector('.visit-label-detail')?.textContent.replace(/\\s+/g, ''),
+    paletteMode: document.querySelector('.gallery-shell')?.dataset.paletteMode,
+  })`);
+  assert(/^\d{4}\.\d{2}\.\d{2}$/.test(galleryDetail.date), `Gallery detail should show a real update date: ${JSON.stringify(galleryDetail)}`);
+  assert(/^\d+ PHOTOS$/.test(galleryDetail.count) && galleryDetail.access === 'PUBLIC ALBUM', `Gallery detail should show album facts: ${JSON.stringify(galleryDetail)}`);
+  assert(galleryDetail.description && galleryDetail.description !== 'CURATED PHOTO ALBUM' && galleryDetail.nav === 'ALBUMS', `Gallery detail should use album content and navigation labels: ${JSON.stringify(galleryDetail)}`);
+  assert(galleryDetail.action === 'VIEWPHOTOS' && galleryDetail.paletteMode === 'detail', `Gallery detail action and palette should be active: ${JSON.stringify(galleryDetail)}`);
+  await screenshot(client, '/tmp/gallery-album-detail.png');
+
   console.log(JSON.stringify({
     ok: failures.length === 0,
-    screenshots: ['/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png'],
+    screenshots: ['/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png'],
     desktop,
+    loginLayout,
     dialog,
     wheel,
     selection,
+    inspectorScroll,
     search,
     batch,
     bulkMutation,
     mobile,
+    galleryDetail,
     checkpoints,
     failures,
   }, null, 2));

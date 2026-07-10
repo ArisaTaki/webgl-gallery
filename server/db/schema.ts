@@ -7,6 +7,7 @@ export const galleryGroups = pgTable(
     slug: varchar('slug', { length: 120 }).notNull().unique(),
     title: text('title').notNull(),
     description: text('description').notNull().default(''),
+    accentColor: varchar('accent_color', { length: 7 }).notNull().default(''),
     coverPhotoId: varchar('cover_photo_id', { length: 120 }),
     sortOrder: integer('sort_order').notNull().default(0),
     visibility: varchar('visibility', { length: 20 }).notNull().default('public'),
@@ -71,4 +72,3 @@ export const photoAssets = pgTable(
     kindIdx: index('photo_assets_kind_idx').on(table.kind),
   }),
 );
-

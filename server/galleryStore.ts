@@ -13,6 +13,7 @@ import {
   DEFAULT_GROUP_SLUG,
   defaultGroup,
   makeUniqueSlug,
+  normalizeAccentColor,
   normalizePhotoStatus,
   normalizeVisitUrl,
   normalizeVisibility,
@@ -94,6 +95,7 @@ class ManifestGalleryStore {
         slug,
         title: String(input.title || 'Untitled Group'),
         description: String(input.description || ''),
+        accentColor: normalizeAccentColor(input.accentColor),
         sortOrder: toInt(input.sortOrder, state.groups.length),
         visibility: normalizeVisibility(input.visibility),
       }),
@@ -111,6 +113,7 @@ class ManifestGalleryStore {
     Object.assign(group, {
       title: patch.title === undefined ? group.title : String(patch.title || 'Untitled Group'),
       description: patch.description === undefined ? group.description : String(patch.description || ''),
+      accentColor: patch.accentColor === undefined ? group.accentColor : normalizeAccentColor(patch.accentColor),
       coverPhotoId: patch.coverPhotoId === undefined ? group.coverPhotoId : patch.coverPhotoId || null,
       sortOrder: patch.sortOrder === undefined ? group.sortOrder : toInt(patch.sortOrder, group.sortOrder),
       visibility: patch.visibility === undefined ? group.visibility : normalizeVisibility(patch.visibility),
@@ -301,6 +304,7 @@ class SqliteGalleryStore {
         slug TEXT NOT NULL UNIQUE,
         title TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
+        accentColor TEXT NOT NULL DEFAULT '',
         coverPhotoId TEXT,
         sortOrder INTEGER NOT NULL DEFAULT 0,
         visibility TEXT NOT NULL DEFAULT 'public',
@@ -347,6 +351,10 @@ class SqliteGalleryStore {
       CREATE INDEX IF NOT EXISTS photo_assets_photo_idx ON photo_assets(photoId);
       CREATE INDEX IF NOT EXISTS photo_assets_kind_idx ON photo_assets(kind);
     `);
+    const groupColumns = this.sqlite.prepare('PRAGMA table_info(groups)').all();
+    if (!groupColumns.some((column) => column.name === 'accentColor')) {
+      this.sqlite.exec("ALTER TABLE groups ADD COLUMN accentColor TEXT NOT NULL DEFAULT ''");
+    }
     this.ensureDefaultGroup();
     await this.seedFromManifestIfEmpty();
   }
@@ -388,6 +396,7 @@ class SqliteGalleryStore {
       slug: makeUniqueSlug(input.slug || input.title || 'group', state.groups.map((item) => item.slug)),
       title: String(input.title || 'Untitled Group'),
       description: String(input.description || ''),
+      accentColor: normalizeAccentColor(input.accentColor),
       sortOrder: toInt(input.sortOrder, state.groups.length),
       visibility: normalizeVisibility(input.visibility),
     });
@@ -404,6 +413,7 @@ class SqliteGalleryStore {
     };
     if (patch.title !== undefined) update.title = String(patch.title || 'Untitled Group');
     if (patch.description !== undefined) update.description = String(patch.description || '');
+    if (patch.accentColor !== undefined) update.accentColor = normalizeAccentColor(patch.accentColor);
     if (patch.coverPhotoId !== undefined) update.coverPhotoId = patch.coverPhotoId || null;
     if (patch.sortOrder !== undefined) update.sortOrder = toInt(patch.sortOrder, group.sortOrder);
     if (patch.visibility !== undefined) update.visibility = normalizeVisibility(patch.visibility);
@@ -631,13 +641,14 @@ class SqliteGalleryStore {
 
   insertGroup(group, options: any = {}) {
     this.sqlite.prepare(`${options.ignore ? 'INSERT OR IGNORE' : 'INSERT'} INTO groups
-      (id, slug, title, description, coverPhotoId, sortOrder, visibility, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (id, slug, title, description, accentColor, coverPhotoId, sortOrder, visibility, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(
         group.id,
         group.slug,
         group.title,
         group.description || '',
+        normalizeAccentColor(group.accentColor),
         group.coverPhotoId || null,
         toInt(group.sortOrder, 0),
         normalizeVisibility(group.visibility),
@@ -755,6 +766,7 @@ class PostgresGalleryStore {
       slug: makeUniqueSlug(input.slug || input.title || id, state.groups.map((item) => item.slug)),
       title: String(input.title || 'Untitled Group'),
       description: String(input.description || ''),
+      accentColor: normalizeAccentColor(input.accentColor),
       coverPhotoId: input.coverPhotoId || null,
       sortOrder: toInt(input.sortOrder, state.groups.length),
       visibility: normalizeVisibility(input.visibility),
@@ -772,6 +784,7 @@ class PostgresGalleryStore {
     };
     if (patch.title !== undefined) update.title = String(patch.title || 'Untitled Group');
     if (patch.description !== undefined) update.description = String(patch.description || '');
+    if (patch.accentColor !== undefined) update.accentColor = normalizeAccentColor(patch.accentColor);
     if (patch.coverPhotoId !== undefined) update.coverPhotoId = patch.coverPhotoId || null;
     if (patch.sortOrder !== undefined) update.sortOrder = toInt(patch.sortOrder, group.sortOrder);
     if (patch.visibility !== undefined) update.visibility = normalizeVisibility(patch.visibility);
@@ -989,6 +1002,7 @@ function normalizeManifestGroups(groups) {
     slug: slugify(group.slug || group.title || `group-${index + 1}`),
     title: group.title || 'Default Gallery',
     description: group.description || '',
+    accentColor: normalizeAccentColor(group.accentColor),
     coverPhotoId: group.coverPhotoId || null,
     sortOrder: toInt(group.sortOrder, index),
     visibility: normalizeVisibility(group.visibility),
@@ -1221,6 +1235,7 @@ function dbGroupToRecord(group) {
     slug: group.slug,
     title: group.title,
     description: group.description || '',
+    accentColor: normalizeAccentColor(group.accentColor),
     coverPhotoId: group.coverPhotoId || null,
     sortOrder: group.sortOrder || 0,
     visibility: normalizeVisibility(group.visibility),

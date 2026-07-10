@@ -30,6 +30,11 @@ export function normalizeVisibility(value) {
   return value === 'hidden' ? 'hidden' : 'public';
 }
 
+export function normalizeAccentColor(value) {
+  const color = String(value || '').trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : '';
+}
+
 export function normalizePhotoStatus(value) {
   if (value === 'hidden' || value === 'deleted') return value;
   return 'active';
@@ -106,6 +111,7 @@ export function defaultGroup(overrides = {}) {
     slug: DEFAULT_GROUP_SLUG,
     title: 'Default Gallery',
     description: '',
+    accentColor: '',
     coverPhotoId: null,
     sortOrder: 0,
     visibility: 'public',

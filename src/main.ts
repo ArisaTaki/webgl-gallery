@@ -241,6 +241,7 @@ const state = {
   adminAuthenticated: false,
   adminGallery: { groups: [], photos: [] },
   adminLoading: false,
+  adminSessionChecked: false,
   adminStatus: '',
   studioActiveGroupId: 'all',
   studioCreateGroupOpen: false,
@@ -594,11 +595,15 @@ function normalizeAlbumProjects(groups, photos) {
         groupPhotos.find((photo) => photo.id === group.coverPhotoId || photo.slug === group.coverPhotoId) ||
         groupPhotos[0];
       if (!cover) return null;
-      const photoRgb = parseRgbColor(cover.color) || [188, 148, 57];
-      const palette = createPhotoPalette(photoRgb, index);
+      const accentRgb = parseHexColor(group.accentColor);
+      const photoRgb = accentRgb || parseRgbColor(cover.color) || [188, 148, 57];
+      const palette = accentRgb ? createAlbumAccentPalette(accentRgb) : createPhotoPalette(photoRgb, index);
       return {
         ...cover,
+        accentColor: group.accentColor || '',
         albumPhotoCount: groupPhotos.length,
+        albumUpdatedAt: group.updatedAt || cover.updatedAt || '',
+        albumVisibility: group.visibility || 'public',
         code: String(index + 1).padStart(2, '0'),
         color: rgbCss(photoRgb),
         coverPhotoId: cover.id,
@@ -882,7 +887,7 @@ function renderShell() {
           </span>
           <span class="project-pagination-line" aria-hidden="true"></span>
           <span class="project-pagination-label">
-            <span>PROJECTS</span>
+            <span>ALBUMS</span>
           </span>
         </div>
         <div class="project-shadow-title project-shadow-title-active" data-shadow-title>
@@ -894,34 +899,34 @@ function renderShell() {
           ${titleLineHtml(activeTitle[1], 1)}
         </div>
         <div class="project-shadow-meta">
-          <div><b>A</b><span>CAPTURED</span><strong>LOCAL ARCHIVE</strong></div>
-          <div><b>B</b><span>TYPE</span><strong>PHOTO ALBUM</strong></div>
-          <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
-          <div><b>D</b><span>FRAME</span><strong data-shadow-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
+          <div><b>A</b><span>UPDATED</span><strong data-shadow-date>—</strong></div>
+          <div><b>B</b><span>PHOTOS</span><strong data-shadow-count>—</strong></div>
+          <div><b>C</b><span>ACCESS</span><strong data-shadow-access>PUBLIC ALBUM</strong></div>
+          <div><b>D</b><span>ALBUM</span><strong data-shadow-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
         </div>
         <div class="project-shadow-meta project-shadow-meta-prev">
-          <div><b>A</b><span>CAPTURED</span><strong>LOCAL ARCHIVE</strong></div>
-          <div><b>B</b><span>TYPE</span><strong>PHOTO ALBUM</strong></div>
-          <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
-          <div><b>D</b><span>FRAME</span><strong data-shadow-frame-prev>001 / ${String(total).padStart(3, '0')}</strong></div>
+          <div><b>A</b><span>UPDATED</span><strong data-shadow-date-prev>—</strong></div>
+          <div><b>B</b><span>PHOTOS</span><strong data-shadow-count-prev>—</strong></div>
+          <div><b>C</b><span>ACCESS</span><strong data-shadow-access-prev>PUBLIC ALBUM</strong></div>
+          <div><b>D</b><span>ALBUM</span><strong data-shadow-frame-prev>001 / ${String(total).padStart(3, '0')}</strong></div>
         </div>
-        <div class="project-shadow-copy" data-shadow-copy>
-          <div>A CURATED PHOTO ALBUM</div>
-          <div>BUILT FOR THE WEB.</div>
+        <div class="project-shadow-copy">
+          <div data-shadow-description>PHOTO ALBUM</div>
+          <div data-shadow-summary>—</div>
         </div>
-        <div class="project-shadow-copy project-shadow-copy-prev" data-shadow-copy-prev>
-          <div>A CURATED PHOTO ALBUM</div>
-          <div>BUILT FOR THE WEB.</div>
+        <div class="project-shadow-copy project-shadow-copy-prev">
+          <div data-shadow-description-prev>PHOTO ALBUM</div>
+          <div data-shadow-summary-prev>—</div>
         </div>
         <button class="shadow-explore" type="button" data-action="shadow-explore">
-          <span>EXPLORE</span>
-          <span>EXPLORE</span>
+          <span>VIEW ALBUM</span>
+          <span>VIEW ALBUM</span>
         </button>
       </section>
 
       <nav class="project-nav" aria-label="详情导航">
         <button type="button" data-action="close-detail">
-          <span class="split-word">${splitLabelHtml('PROJECTS')}</span>
+          <span class="split-word">${splitLabelHtml('ALBUMS')}</span>
         </button>
       </nav>
 
@@ -931,10 +936,10 @@ function renderShell() {
       </section>
 
       <section class="project-meta" aria-live="polite">
-        <div><b>A</b><span>CAPTURED</span><strong data-meta-date>LOCAL ARCHIVE</strong></div>
-        <div><b>B</b><span>TYPE</span><strong>PHOTO ALBUM</strong></div>
-        <div><b>C</b><span>ROLE</span><strong>MEMORY & MOTION</strong></div>
-        <div><b>D</b><span>FRAME</span><strong data-meta-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
+        <div><b>A</b><span>UPDATED</span><strong data-meta-date>—</strong></div>
+        <div><b>B</b><span>PHOTOS</span><strong data-meta-count>—</strong></div>
+        <div><b>C</b><span>ACCESS</span><strong data-meta-access>PUBLIC ALBUM</strong></div>
+        <div><b>D</b><span>ALBUM</span><strong data-meta-frame>001 / ${String(total).padStart(3, '0')}</strong></div>
       </section>
 
       <div class="detail-rail" aria-label="照片缩略图">
@@ -947,8 +952,8 @@ function renderShell() {
       </section>
 
       <button class="visit-link" type="button" data-action="next-photo" data-morph-trigger="explore">
-        <strong class="split-word visit-label-detail">${splitLabelHtml('EXPLORE')}</strong>
-        <strong class="split-word visit-label-work">${splitLabelHtml('VISIT SITE')}</strong>
+        <strong class="split-word visit-label-detail">${splitLabelHtml('VIEW PHOTOS')}</strong>
+        <strong class="split-word visit-label-work">${splitLabelHtml('OPEN IMAGE')}</strong>
         <span class="visit-line" aria-hidden="true"></span>
         <span class="visit-symbol" aria-hidden="true" data-morph-symbol="explore">
           <svg class="morph-icon" viewBox="0 0 14 14" focusable="false" aria-hidden="true">
@@ -958,12 +963,12 @@ function renderShell() {
       </button>
 
       <section class="index-note index-note-left">
-        <p>PRIVATE PHOTO ARCHIVE<br />AVAILABLE LOCAL</p>
+        <p data-index-context>ALBUM COLLECTION<br />${String(total).padStart(2, '0')} ALBUMS</p>
       </section>
       <section class="index-note index-note-right">
-        <span>MEMORY</span>
-        <span>ARCHIVE</span>
-        <span>LOCAL</span>
+        <span data-index-active-title>ALBUM</span>
+        <span data-index-active-count>—</span>
+        <span data-index-active-position>01 / ${String(total).padStart(2, '0')}</span>
       </section>
 
       <section class="index-readout" aria-live="polite">
@@ -1015,7 +1020,7 @@ function renderShell() {
 
       <section class="studio-panel" aria-label="Gallery studio" aria-hidden="${state.mode !== VIEW.studio}">
         <div class="studio-shell">
-          <form class="studio-form studio-login-form">
+          <form class="studio-form studio-login-form" ${state.adminSessionChecked ? '' : 'hidden'}>
             <div>
               <p class="kicker">PRIVATE ROOM</p>
               <h2>Studio</h2>
@@ -1030,6 +1035,10 @@ function renderShell() {
               <button type="button" data-action="close-studio">Close</button>
             </div>
           </form>
+          <section class="studio-loading" data-studio-loading ${state.adminSessionChecked ? 'hidden' : ''} aria-live="polite">
+            <span class="studio-loading-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            <div><strong>正在进入 Studio</strong><small>验证会话并加载照片列表...</small></div>
+          </section>
           <section class="studio-admin" data-studio-admin hidden>
             <header class="studio-admin-head">
               <div class="studio-brand">
@@ -1067,6 +1076,9 @@ function renderShell() {
     detailRail: app.querySelector('.detail-rail'),
     detailRailTrack: app.querySelector('.detail-rail-track'),
     frame: app.querySelector('[data-meta-frame]'),
+    metaAccess: app.querySelector('[data-meta-access]'),
+    metaCount: app.querySelector('[data-meta-count]'),
+    metaDate: app.querySelector('[data-meta-date]'),
     loaderDigits: [...app.querySelectorAll('[data-loader-digit]')],
     meter: [...app.querySelectorAll('.meter i')],
     paginationCanvas: app.querySelector('.pagination-canvas'),
@@ -1077,6 +1089,16 @@ function renderShell() {
     shadowCurrentPrev: app.querySelector('[data-shadow-current-prev]'),
     shadowFrame: app.querySelector('[data-shadow-frame]'),
     shadowFramePrev: app.querySelector('[data-shadow-frame-prev]'),
+    shadowAccess: app.querySelector('[data-shadow-access]'),
+    shadowAccessPrev: app.querySelector('[data-shadow-access-prev]'),
+    shadowCount: app.querySelector('[data-shadow-count]'),
+    shadowCountPrev: app.querySelector('[data-shadow-count-prev]'),
+    shadowDate: app.querySelector('[data-shadow-date]'),
+    shadowDatePrev: app.querySelector('[data-shadow-date-prev]'),
+    shadowDescription: app.querySelector('[data-shadow-description]'),
+    shadowDescriptionPrev: app.querySelector('[data-shadow-description-prev]'),
+    shadowSummary: app.querySelector('[data-shadow-summary]'),
+    shadowSummaryPrev: app.querySelector('[data-shadow-summary-prev]'),
     shadowTitle: app.querySelector('[data-shadow-title]'),
     shadowTitlePrev: app.querySelector('[data-shadow-title-prev]'),
     shadowTotal: app.querySelector('[data-shadow-total]'),
@@ -1091,6 +1113,7 @@ function renderShell() {
     studioAdminBody: app.querySelector('[data-studio-admin-body]'),
     studioFileCount: app.querySelector('[data-studio-file-count]'),
     studioLoginForm: app.querySelector('.studio-login-form'),
+    studioLoading: app.querySelector('[data-studio-loading]'),
     status: app.querySelector('.studio-status'),
     studioPanel: app.querySelector('.studio-panel'),
     aboutLabel: app.querySelector('[data-about-label]'),
@@ -1099,6 +1122,10 @@ function renderShell() {
     thumbs: [...app.querySelectorAll('.detail-thumb')],
     title: app.querySelector('[data-title]'),
     total: app.querySelector('[data-total]'),
+    indexContext: app.querySelector('[data-index-context]'),
+    indexActiveCount: app.querySelector('[data-index-active-count]'),
+    indexActivePosition: app.querySelector('[data-index-active-position]'),
+    indexActiveTitle: app.querySelector('[data-index-active-title]'),
     visitLink: app.querySelector('.visit-link'),
     workStage: app.querySelector('.work-stage'),
     workLayers: [...app.querySelectorAll('.work-layer')],
@@ -2272,6 +2299,7 @@ async function ensureAdminLoaded() {
   } catch (error: any) {
     setStudioStatus(error.message || 'Studio unavailable.');
   } finally {
+    state.adminSessionChecked = true;
     state.adminLoading = false;
     renderStudioAdmin();
   }
@@ -2315,6 +2343,7 @@ async function onStudioLogin(event: any, form) {
 async function onAdminLogout() {
   await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {});
   state.adminAuthenticated = false;
+  state.adminSessionChecked = true;
   state.adminGallery = { groups: [], photos: [] };
   state.studioSelectedPhotoId = '';
   state.studioSelectedPhotoIds = [];
@@ -2340,6 +2369,7 @@ async function onAdminGroupSave(event: any, form) {
       state.studioSelectedPhotoIds = [];
     }
     await loadAdminGallery();
+    await refreshPublicPhotos();
   } catch (error: any) {
     setStudioStatus(error.message);
   }
@@ -2353,6 +2383,7 @@ async function onAdminDeleteGroup(id) {
     if (state.studioActiveGroupId === id) state.studioActiveGroupId = 'all';
     state.studioSelectedPhotoId = '';
     await loadAdminGallery();
+    await refreshPublicPhotos();
   } catch (error: any) {
     setStudioStatus(error.message);
   }
@@ -2558,6 +2589,14 @@ async function adminFetch(url, options: LooseRecord = {}) {
   return result;
 }
 
+function studioGroupAccentColor(group, photos) {
+  const explicit = parseHexColor(group?.accentColor);
+  if (explicit) return rgbHex(explicit);
+  const groupPhotos = photos.filter((photo) => photo.groupId === group?.id);
+  const cover = groupPhotos.find((photo) => photo.id === group?.coverPhotoId) || groupPhotos[0];
+  return rgbHex(parseRgbColor(cover?.color) || [215, 198, 129]);
+}
+
 function renderStudioAdmin() {
   if (!galleryEls.studioLoginForm || !galleryEls.studioAdmin || !galleryEls.studioAdminBody) return;
   const currentPhotoGrid = app.querySelector('.studio-photo-grid') as HTMLElement | null;
@@ -2566,7 +2605,15 @@ function renderStudioAdmin() {
   if (currentPhotoGrid) state.studioPhotoScrollTop = currentPhotoGrid.scrollTop;
   if (currentSidebar) state.studioSidebarScrollTop = currentSidebar.scrollTop;
   if (currentInspector) state.studioInspectorScrollTop = currentInspector.scrollTop;
-  galleryEls.studioLoginForm.hidden = state.adminAuthenticated;
+  const showLoading = state.adminLoading || !state.adminSessionChecked;
+  if (galleryEls.studioLoading) {
+    galleryEls.studioLoading.hidden = !showLoading;
+    const loadingTitle = galleryEls.studioLoading.querySelector('strong');
+    const loadingCopy = galleryEls.studioLoading.querySelector('small');
+    if (loadingTitle) loadingTitle.textContent = state.adminAuthenticated ? '正在加载图库' : '正在进入 Studio';
+    if (loadingCopy) loadingCopy.textContent = state.adminAuthenticated ? '同步相册、照片与管理状态...' : '验证会话并准备管理界面...';
+  }
+  galleryEls.studioLoginForm.hidden = state.adminAuthenticated || showLoading;
   galleryEls.studioAdmin.hidden = !state.adminAuthenticated;
   if (!state.adminAuthenticated) {
     galleryEls.studioAdminBody.innerHTML = '';
@@ -2614,7 +2661,7 @@ function renderStudioAdmin() {
       <b>${photos.length}</b>
     </button>`,
     ...groups.map((group) => `
-      <button type="button" data-studio-group-filter="${escapeHtml(group.id)}" class="${activeGroupId === group.id ? 'is-active' : ''}">
+      <button type="button" data-studio-group-filter="${escapeHtml(group.id)}" class="${activeGroupId === group.id ? 'is-active' : ''}" style="--album-color:${studioGroupAccentColor(group, photos)}">
         <i data-lucide="folder"></i>
         <span>${escapeHtml(group.title)}</span>
         <b>${photoCountByGroup.get(group.id) || 0}</b>
@@ -2622,6 +2669,7 @@ function renderStudioAdmin() {
     `),
   ].join('');
   const activeGroupPhotoCount = activeGroup ? photoCountByGroup.get(activeGroup.id) || 0 : 0;
+  const activeGroupAccentColor = activeGroup ? studioGroupAccentColor(activeGroup, photos) : '#d7c681';
   const canDeleteActiveGroup = Boolean(activeGroup && activeGroup.id !== 'default' && activeGroupPhotoCount === 0);
   const groupInspector = activeGroup ? `
     <form class="studio-group-form studio-group-card" data-group-id="${escapeHtml(activeGroup.id)}">
@@ -2656,6 +2704,13 @@ function renderStudioAdmin() {
       <label class="studio-field">
         <span>相册介绍</span>
         <textarea name="description" rows="4" aria-label="相册介绍">${escapeHtml(activeGroup.description || '')}</textarea>
+      </label>
+      <label class="studio-field studio-color-field">
+        <span>前台主题色</span>
+        <span class="studio-color-control">
+          <input name="accentColor" type="color" value="${activeGroupAccentColor}" aria-label="前台主题色" />
+          <strong>${activeGroup.accentColor ? '使用自定义颜色' : '当前取自封面图，保存后固定'}</strong>
+        </span>
       </label>
       <div class="studio-row-actions">
         <button type="submit"><i data-lucide="save"></i><span>保存相册</span></button>
@@ -2790,6 +2845,13 @@ function renderStudioAdmin() {
         <label class="studio-field">
           <span>相册介绍</span>
           <textarea name="description" rows="3" placeholder="写给这个相册的一句话"></textarea>
+        </label>
+        <label class="studio-field studio-color-field">
+          <span>前台主题色</span>
+          <span class="studio-color-control">
+            <input name="accentColor" type="color" value="#d7c681" aria-label="前台主题色" />
+            <strong>用于该相册的前台背景与文字配色</strong>
+          </span>
         </label>
         <div class="studio-dialog-actions">
           <button type="button" data-action="studio-close-create">取消</button>
@@ -3648,6 +3710,27 @@ function estimatePointerIndex() {
   return index;
 }
 
+function galleryProjectMeta(photo, index, total) {
+  const photoCount = Number(photo?.albumPhotoCount) || (photo ? 1 : 0);
+  const rawDescription = String(photo?.description || '').replace(/\s+/g, ' ').trim();
+  const description = rawDescription
+    ? `${rawDescription.slice(0, 54)}${rawDescription.length > 54 ? '…' : ''}`
+    : 'CURATED PHOTO ALBUM';
+  return {
+    access: photo?.albumVisibility === 'hidden' ? 'HIDDEN ALBUM' : 'PUBLIC ALBUM',
+    count: `${String(photoCount).padStart(2, '0')} PHOTOS`,
+    date: formatGalleryDate(photo?.albumUpdatedAt || photo?.updatedAt || photo?.capturedAt),
+    description,
+    summary: `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')} · ${photo?.title || 'ALBUM'}`,
+  };
+}
+
+function formatGalleryDate(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return 'DATE UNKNOWN';
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('.');
+}
+
 function updateUi() {
   const photo = state.photos[state.activeIndex];
   const currentNumber = state.photos.length ? state.activeIndex + 1 : 0;
@@ -3669,10 +3752,25 @@ function updateUi() {
   const archiveTotal = String(state.galleryPhotoCount || state.albumPhotos.length || state.photos.length).padStart(3, '0');
   if (galleryEls.aboutTotal) galleryEls.aboutTotal.textContent = `${archiveTotal} PHOTOS`;
   if (galleryEls.frame) galleryEls.frame.textContent = `${current} / ${total}`;
+  const projectMeta = galleryProjectMeta(photo, state.activeIndex, state.photos.length);
+  if (galleryEls.metaDate) galleryEls.metaDate.textContent = projectMeta.date;
+  if (galleryEls.metaCount) galleryEls.metaCount.textContent = projectMeta.count;
+  if (galleryEls.metaAccess) galleryEls.metaAccess.textContent = projectMeta.access;
+  if (galleryEls.shadowDate) galleryEls.shadowDate.textContent = projectMeta.date;
+  if (galleryEls.shadowCount) galleryEls.shadowCount.textContent = projectMeta.count;
+  if (galleryEls.shadowAccess) galleryEls.shadowAccess.textContent = projectMeta.access;
+  if (galleryEls.shadowDescription) galleryEls.shadowDescription.textContent = projectMeta.description;
+  if (galleryEls.shadowSummary) galleryEls.shadowSummary.textContent = projectMeta.summary;
+  if (galleryEls.indexContext) galleryEls.indexContext.innerHTML = `ALBUM COLLECTION<br />${String(state.photos.length).padStart(2, '0')} ALBUMS`;
+  if (galleryEls.indexActiveTitle) galleryEls.indexActiveTitle.textContent = photo?.title || 'ALBUM';
+  if (galleryEls.indexActiveCount) galleryEls.indexActiveCount.textContent = projectMeta.count;
+  if (galleryEls.indexActivePosition) galleryEls.indexActivePosition.textContent = `${String(currentNumber).padStart(2, '0')} / ${String(state.photos.length).padStart(2, '0')}`;
   const currentShort = String(state.activeIndex + 1).padStart(2, '0');
   const previousIndex = state.exitingProjectIndex >= 0 ? state.exitingProjectIndex : state.activeIndex;
   const previousShort = String(previousIndex + 1).padStart(2, '0');
   const previousFrame = String(previousIndex + 1).padStart(3, '0');
+  const previousPhoto = state.photos[previousIndex] || photo;
+  const previousMeta = galleryProjectMeta(previousPhoto, previousIndex, state.photos.length);
   const totalShort = String(state.photos.length).padStart(2, '0');
   if (galleryEls.shadowCurrent) galleryEls.shadowCurrent.textContent = currentShort;
   if (galleryEls.shadowCurrentPrev) galleryEls.shadowCurrentPrev.textContent = previousShort;
@@ -3680,6 +3778,11 @@ function updateUi() {
   if (galleryEls.shadowTotalPrev) galleryEls.shadowTotalPrev.textContent = totalShort;
   if (galleryEls.shadowFrame) galleryEls.shadowFrame.textContent = `${current} / ${total}`;
   if (galleryEls.shadowFramePrev) galleryEls.shadowFramePrev.textContent = `${previousFrame} / ${total}`;
+  if (galleryEls.shadowDatePrev) galleryEls.shadowDatePrev.textContent = previousMeta.date;
+  if (galleryEls.shadowCountPrev) galleryEls.shadowCountPrev.textContent = previousMeta.count;
+  if (galleryEls.shadowAccessPrev) galleryEls.shadowAccessPrev.textContent = previousMeta.access;
+  if (galleryEls.shadowDescriptionPrev) galleryEls.shadowDescriptionPrev.textContent = previousMeta.description;
+  if (galleryEls.shadowSummaryPrev) galleryEls.shadowSummaryPrev.textContent = previousMeta.summary;
   if (galleryEls.shadowTitle) {
     const title = shadowTitleFor(photo, state.activeIndex);
     updateTitleLayer(galleryEls.shadowTitle, title);
@@ -3796,6 +3899,24 @@ function parseRgbColor(color) {
   const match = String(color).match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
   if (!match) return null;
   return match.slice(1, 4).map((value) => clamp(Number(value), 0, 255));
+}
+
+function parseHexColor(color) {
+  const match = String(color || '').trim().match(/^#([0-9a-f]{6})$/i);
+  if (!match) return null;
+  return [0, 2, 4].map((offset) => Number.parseInt(match[1].slice(offset, offset + 2), 16));
+}
+
+function rgbHex(rgb) {
+  return `#${rgb.map((value) => Math.round(clamp(value, 0, 255)).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function createAlbumAccentPalette(rgb) {
+  const surface = rgb.map((value) => Math.round(value));
+  const isLight = luminance(surface) > 0.58;
+  const text = isLight ? [28, 29, 27] : [247, 242, 224];
+  const work = mixRgb(surface, isLight ? [238, 239, 235] : [22, 23, 22], 0.72);
+  return { photo: surface.slice(), surface, text, work };
 }
 
 function createPhotoPalette(rgb, index = 0) {
