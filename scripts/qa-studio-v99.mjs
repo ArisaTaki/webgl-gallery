@@ -10,12 +10,17 @@ async function staticChecks() {
     readFile(new URL('../server/photoPipeline.ts', import.meta.url), 'utf8'),
     readFile(new URL('../README.md', import.meta.url), 'utf8'),
   ]);
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
   const required = [
     ['studio route', main.includes('/studio')],
     ['secret key buffer', main.includes('state.keyBuffer =') && main.includes("endsWith('webgl')")],
     ['studio admin login', main.includes("fetch('/api/admin/login'")],
     ['studio dashboard layout', main.includes('studio-dashboard') && main.includes('data-studio-group-filter')],
     ['studio upload panel', main.includes('studio-upload-panel') && main.includes('studio-inspector')],
+    ['single photo inspector', main.includes('studioSelectedPhotoId') && main.includes('data-studio-photo-select')],
+    ['photo search', main.includes('data-studio-search') && main.includes('applyStudioPhotoSearch')],
+    ['collapsible creation flow', main.includes('studio-toggle-create') && main.includes('studioCreateGroupOpen')],
+    ['isolated Studio chrome', styles.includes('.gallery-shell.is-studio > .corner')],
     ['explicit legacy upload key', server.includes('verifyLegacyUploadKey') && server.includes("request.headers['x-gallery-key']")],
     ['multer file limit', server.includes("upload.array('photos', 24)")],
     ['webp variants', pipeline.includes("{ key: 'thumb'") && pipeline.includes("{ key: 'large'")],

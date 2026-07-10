@@ -1,4 +1,26 @@
 import * as THREE from 'three';
+import {
+  Album as AlbumIcon,
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Folder,
+  Image as ImageIcon,
+  LogOut,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Search,
+  Settings,
+  Trash2,
+  UploadCloud,
+  X,
+  createIcons,
+} from 'lucide';
 import './styles.css';
 
 type LooseRecord = Record<string, any>;
@@ -66,6 +88,28 @@ const VIEW = {
   setup: 'setup',
   studio: 'studio',
   work: 'work',
+};
+
+const STUDIO_ICONS = {
+  Album: AlbumIcon,
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  Folder,
+  Image: ImageIcon,
+  LogOut,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Save,
+  Search,
+  Settings,
+  Trash2,
+  UploadCloud,
+  X,
 };
 
 const SETUP_COPY = {
@@ -183,6 +227,10 @@ const state = {
   adminLoading: false,
   adminStatus: '',
   studioActiveGroupId: 'all',
+  studioCreateGroupOpen: false,
+  studioSearch: '',
+  studioSelectedPhotoId: '',
+  studioUploadOpen: false,
   curveLatency: 0,
   currentGroupSlug: '',
   detailEntryStartedAt: 0,
@@ -961,15 +1009,26 @@ function renderShell() {
           </form>
           <section class="studio-admin" data-studio-admin hidden>
             <header class="studio-admin-head">
-              <div>
-                <p class="kicker">Gallery Studio</p>
-                <h2>相册管理</h2>
+              <div class="studio-brand">
+                <span class="studio-brand-mark"><i data-lucide="image"></i></span>
+                <div>
+                  <p class="kicker">WebGL Gallery</p>
+                  <h2>Studio</h2>
+                </div>
               </div>
               <div class="studio-admin-actions">
-                <button type="button" data-action="setup-link">设置</button>
-                <button type="button" data-action="admin-refresh">刷新</button>
-                <button type="button" data-action="admin-logout">退出</button>
-                <button type="button" data-action="close-studio">关闭</button>
+                <button class="studio-action-button" type="button" data-action="setup-link">
+                  <i data-lucide="settings"></i><span>设置</span>
+                </button>
+                <button class="studio-icon-button" type="button" data-action="admin-refresh" aria-label="刷新" title="刷新">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
+                <button class="studio-icon-button" type="button" data-action="admin-logout" aria-label="退出登录" title="退出登录">
+                  <i data-lucide="log-out"></i>
+                </button>
+                <button class="studio-icon-button" type="button" data-action="close-studio" aria-label="返回画廊" title="返回画廊">
+                  <i data-lucide="x"></i>
+                </button>
               </div>
             </header>
             <div data-studio-admin-body></div>
@@ -1446,11 +1505,18 @@ function attachEvents() {
     const reprocessPhoto = event.target.closest('[data-admin-reprocess-photo]');
     const deleteGroup = event.target.closest('[data-admin-delete-group]');
     const groupFilter = event.target.closest('[data-studio-group-filter]');
+    const photoSelect = event.target.closest('[data-studio-photo-select]');
     const setupLanguageButton = event.target.closest('[data-setup-language]');
     const thumb = event.target.closest('[data-index]');
 
     if (groupFilter) {
       state.studioActiveGroupId = groupFilter.dataset.studioGroupFilter || 'all';
+      state.studioSelectedPhotoId = '';
+      renderStudioAdmin();
+      return;
+    }
+    if (photoSelect) {
+      state.studioSelectedPhotoId = photoSelect.dataset.studioPhotoSelect || '';
       renderStudioAdmin();
       return;
     }
@@ -1539,6 +1605,24 @@ function attachEvents() {
     if (name === 'admin-logout') {
       onAdminLogout();
     }
+    if (name === 'studio-toggle-create') {
+      state.studioCreateGroupOpen = !state.studioCreateGroupOpen;
+      renderStudioAdmin();
+    }
+    if (name === 'studio-toggle-upload') {
+      state.studioUploadOpen = !state.studioUploadOpen;
+      renderStudioAdmin();
+    }
+    if (name === 'studio-clear-search') {
+      state.studioSearch = '';
+      const input = app.querySelector('[data-studio-search]') as HTMLInputElement | null;
+      if (input) input.value = '';
+      applyStudioPhotoSearch('');
+    }
+    if (name === 'studio-clear-selection') {
+      state.studioSelectedPhotoId = '';
+      renderStudioAdmin();
+    }
   });
 
   app.addEventListener('pointerover', onMorphEnter);
@@ -1579,6 +1663,12 @@ function attachEvents() {
     if (event.target.matches('input[name="photos"]')) {
       updateStudioFileCount(event.target.form);
     }
+  });
+
+  app.addEventListener('input', (event: any) => {
+    if (!event.target.matches('[data-studio-search]')) return;
+    state.studioSearch = event.target.value || '';
+    applyStudioPhotoSearch(state.studioSearch);
   });
 }
 
@@ -2081,6 +2171,7 @@ async function onAdminLogout() {
   await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {});
   state.adminAuthenticated = false;
   state.adminGallery = { groups: [], photos: [] };
+  state.studioSelectedPhotoId = '';
   setStudioStatus('Logged out.');
   renderStudioAdmin();
 }
@@ -2096,7 +2187,11 @@ async function onAdminGroupSave(event: any, form) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (result.group?.id) state.studioActiveGroupId = result.group.id;
+    if (result.group?.id) {
+      state.studioActiveGroupId = result.group.id;
+      state.studioCreateGroupOpen = false;
+      state.studioSelectedPhotoId = '';
+    }
     await loadAdminGallery();
   } catch (error: any) {
     setStudioStatus(error.message);
@@ -2104,11 +2199,12 @@ async function onAdminGroupSave(event: any, form) {
 }
 
 async function onAdminDeleteGroup(id) {
-  if (!id || !window.confirm('Delete this group?')) return;
+  if (!id || !window.confirm('确定删除这个相册吗？')) return;
   setStudioStatus('Deleting group...');
   try {
     await adminFetch(`/api/admin/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
     if (state.studioActiveGroupId === id) state.studioActiveGroupId = 'all';
+    state.studioSelectedPhotoId = '';
     await loadAdminGallery();
   } catch (error: any) {
     setStudioStatus(error.message);
@@ -2134,6 +2230,8 @@ async function onAdminPhotoUpload(event: any, form) {
       body: payload,
     });
     state.adminGallery = result;
+    state.studioSelectedPhotoId = result.addedPhotos?.[0]?.id || '';
+    state.studioUploadOpen = false;
     await refreshPublicPhotos();
     form.reset();
     updateStudioFileCount(form);
@@ -2168,10 +2266,11 @@ async function onAdminPhotoSave(event: any, form) {
 }
 
 async function onAdminDeletePhoto(id) {
-  if (!id || !window.confirm('Delete this photo?')) return;
+  if (!id || !window.confirm('确定删除这张照片吗？')) return;
   setStudioStatus('Deleting photo...');
   try {
     await adminFetch(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (state.studioSelectedPhotoId === id) state.studioSelectedPhotoId = '';
     await loadAdminGallery();
     await refreshPublicPhotos();
   } catch (error: any) {
@@ -2236,110 +2335,143 @@ function renderStudioAdmin() {
   const visiblePhotos = activeGroupId === 'all'
     ? photos
     : photos.filter((photo) => photo.groupId === activeGroupId);
+  let selectedPhoto = photos.find((photo) => photo.id === state.studioSelectedPhotoId);
+  if (selectedPhoto && activeGroupId !== 'all' && selectedPhoto.groupId !== activeGroupId) selectedPhoto = null;
+  if (!selectedPhoto) state.studioSelectedPhotoId = '';
+  const groupById = new Map(groups.map((group) => [group.id, group]));
   const groupOptions = groups.length
-    ? groups.map((group) => `<option value="${escapeHtml(group.id)}" ${activeGroupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')
+    ? groups.map((group, index) => `<option value="${escapeHtml(group.id)}" ${activeGroupId === group.id || (activeGroupId === 'all' && index === 0) ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')
     : '<option value="">先创建相册</option>';
   const albumButtons = [
     `<button type="button" data-studio-group-filter="all" class="${activeGroupId === 'all' ? 'is-active' : ''}">
+      <i data-lucide="image"></i>
       <span>全部照片</span>
       <b>${photos.length}</b>
     </button>`,
     ...groups.map((group) => `
       <button type="button" data-studio-group-filter="${escapeHtml(group.id)}" class="${activeGroupId === group.id ? 'is-active' : ''}">
+        <i data-lucide="folder"></i>
         <span>${escapeHtml(group.title)}</span>
         <b>${photoCountByGroup.get(group.id) || 0}</b>
       </button>
     `),
   ].join('');
-  const inspectorGroups = (activeGroup ? [activeGroup] : groups).map((group) => `
-    <form class="studio-group-form studio-group-card" data-group-id="${escapeHtml(group.id)}">
+  const groupInspector = activeGroup ? `
+    <form class="studio-group-form studio-group-card" data-group-id="${escapeHtml(activeGroup.id)}">
       <div class="studio-card-heading">
-        <strong>${escapeHtml(group.title)}</strong>
-        <span>${photoCountByGroup.get(group.id) || 0} 张</span>
+        <div>
+          <span class="studio-eyebrow">相册设置</span>
+          <strong>${escapeHtml(activeGroup.title)}</strong>
+        </div>
+        <span>${photoCountByGroup.get(activeGroup.id) || 0} 张</span>
       </div>
       <label class="studio-field">
         <span>相册名称</span>
-        <input name="title" value="${escapeHtml(group.title)}" aria-label="相册名称" />
+        <input name="title" value="${escapeHtml(activeGroup.title)}" aria-label="相册名称" />
       </label>
       <label class="studio-field">
         <span>路径 Slug</span>
-        <input name="slug" value="${escapeHtml(group.slug)}" aria-label="路径 Slug" />
+        <input name="slug" value="${escapeHtml(activeGroup.slug)}" aria-label="路径 Slug" />
       </label>
       <div class="studio-inline-fields">
         <label class="studio-field">
           <span>排序</span>
-          <input name="sortOrder" type="number" value="${Number(group.sortOrder) || 0}" aria-label="排序" />
+          <input name="sortOrder" type="number" value="${Number(activeGroup.sortOrder) || 0}" aria-label="排序" />
         </label>
         <label class="studio-field">
           <span>可见性</span>
           <select name="visibility" aria-label="可见性">
-            <option value="public" ${group.visibility === 'public' ? 'selected' : ''}>公开</option>
-            <option value="hidden" ${group.visibility === 'hidden' ? 'selected' : ''}>隐藏</option>
+            <option value="public" ${activeGroup.visibility === 'public' ? 'selected' : ''}>公开</option>
+            <option value="hidden" ${activeGroup.visibility === 'hidden' ? 'selected' : ''}>隐藏</option>
           </select>
         </label>
       </div>
       <label class="studio-field">
         <span>相册介绍</span>
-        <textarea name="description" rows="3" aria-label="相册介绍">${escapeHtml(group.description || '')}</textarea>
+        <textarea name="description" rows="4" aria-label="相册介绍">${escapeHtml(activeGroup.description || '')}</textarea>
       </label>
       <div class="studio-row-actions">
-        <button type="submit">保存相册</button>
-        <button type="button" data-admin-delete-group="${escapeHtml(group.id)}">删除</button>
+        <button type="submit"><i data-lucide="save"></i><span>保存相册</span></button>
+        <button class="studio-danger-button" type="button" data-admin-delete-group="${escapeHtml(activeGroup.id)}" aria-label="删除相册" title="删除相册"><i data-lucide="trash-2"></i></button>
       </div>
     </form>
-  `).join('');
-  const photoCards = visiblePhotos.map((photo) => {
-    const reprocessButton = photo.canReprocess
-      ? `<button type="button" data-admin-reprocess-photo="${escapeHtml(photo.id)}">重建缩略图</button>`
-      : '';
+  ` : '';
+  const photoTiles = visiblePhotos.map((photo) => {
+    const group = groupById.get(photo.groupId);
+    const searchText = `${photo.title || ''} ${photo.description || ''} ${group?.title || ''}`.toLowerCase();
     return `
-    <form class="studio-photo-form studio-photo-card" data-photo-id="${escapeHtml(photo.id)}">
-      <div class="studio-photo-preview">
-        <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
-        <div class="studio-photo-badges">
-          <span>${photo.status === 'hidden' ? '隐藏' : '显示'}</span>
-          <span>${escapeHtml(photo.group || 'default')}</span>
+      <article class="studio-photo-tile${selectedPhoto?.id === photo.id ? ' is-selected' : ''}" data-studio-photo-tile data-search="${escapeHtml(searchText)}">
+        <button type="button" data-studio-photo-select="${escapeHtml(photo.id)}" aria-label="编辑 ${escapeHtml(photo.title || '未命名照片')}">
+          <span class="studio-photo-thumb">
+            <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
+            <span class="studio-photo-state${photo.status === 'hidden' ? ' is-hidden' : ''}">
+              <i data-lucide="${photo.status === 'hidden' ? 'eye-off' : 'eye'}"></i>
+              ${photo.status === 'hidden' ? '隐藏' : '显示'}
+            </span>
+          </span>
+          <span class="studio-photo-meta">
+            <span>
+              <strong>${escapeHtml(photo.title || '未命名照片')}</strong>
+              <small>${escapeHtml(group?.title || photo.group || '默认相册')}</small>
+            </span>
+            <i data-lucide="chevron-down"></i>
+          </span>
+        </button>
+      </article>
+    `;
+  }).join('');
+  const photoInspector = selectedPhoto ? `
+    <section class="studio-inspector-panel">
+      <header class="studio-inspector-head">
+        <div>
+          <span class="studio-eyebrow">照片详情</span>
+          <h3>${escapeHtml(selectedPhoto.title || '未命名照片')}</h3>
         </div>
+        <button class="studio-icon-button" type="button" data-action="studio-clear-selection" aria-label="关闭照片详情" title="关闭"><i data-lucide="x"></i></button>
+      </header>
+      <div class="studio-inspector-preview">
+        <img src="${escapeHtml(selectedPhoto.medium || selectedPhoto.thumb || '')}" alt="" />
       </div>
-      <label class="studio-field">
-        <span>标题</span>
-        <input name="title" value="${escapeHtml(photo.title)}" aria-label="标题" />
-      </label>
-      <label class="studio-field">
-        <span>介绍</span>
-        <textarea name="description" rows="3" aria-label="介绍">${escapeHtml(photo.description || '')}</textarea>
-      </label>
-      <label class="studio-field">
-        <span>相册</span>
-        <select name="groupId" aria-label="相册">
-          ${groups.map((group) => `<option value="${escapeHtml(group.id)}" ${photo.groupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')}
-        </select>
-      </label>
-      <div class="studio-inline-fields">
+      <form class="studio-photo-form" data-photo-id="${escapeHtml(selectedPhoto.id)}">
         <label class="studio-field">
-          <span>拍摄日期</span>
-          <input name="capturedAt" type="date" value="${escapeHtml(String(photo.capturedAt || '').slice(0, 10))}" aria-label="拍摄日期" />
+          <span>标题</span>
+          <input name="title" value="${escapeHtml(selectedPhoto.title || '')}" aria-label="标题" />
         </label>
         <label class="studio-field">
-          <span>排序</span>
-          <input name="sortOrder" type="number" value="${Number(photo.sortOrder) || photo.index || 0}" aria-label="排序" />
+          <span>介绍</span>
+          <textarea name="description" rows="4" aria-label="介绍">${escapeHtml(selectedPhoto.description || '')}</textarea>
         </label>
+        <label class="studio-field">
+          <span>相册</span>
+          <select name="groupId" aria-label="相册">
+            ${groups.map((group) => `<option value="${escapeHtml(group.id)}" ${selectedPhoto.groupId === group.id ? 'selected' : ''}>${escapeHtml(group.title)}</option>`).join('')}
+          </select>
+        </label>
+        <div class="studio-inline-fields">
+          <label class="studio-field">
+            <span>拍摄日期</span>
+            <input name="capturedAt" type="date" value="${escapeHtml(String(selectedPhoto.capturedAt || '').slice(0, 10))}" aria-label="拍摄日期" />
+          </label>
+          <label class="studio-field">
+            <span>排序</span>
+            <input name="sortOrder" type="number" value="${Number(selectedPhoto.sortOrder) || selectedPhoto.index || 0}" aria-label="排序" />
+          </label>
+        </div>
         <label class="studio-field">
           <span>状态</span>
           <select name="status" aria-label="状态">
-            <option value="active" ${photo.status === 'active' ? 'selected' : ''}>显示</option>
-            <option value="hidden" ${photo.status === 'hidden' ? 'selected' : ''}>隐藏</option>
+            <option value="active" ${selectedPhoto.status === 'active' ? 'selected' : ''}>显示</option>
+            <option value="hidden" ${selectedPhoto.status === 'hidden' ? 'selected' : ''}>隐藏</option>
           </select>
         </label>
-      </div>
-      <div class="studio-card-actions">
-        <button type="submit">保存</button>
-        ${reprocessButton}
-        <button type="button" data-admin-delete-photo="${escapeHtml(photo.id)}">删除</button>
-      </div>
-    </form>
-  `;
-  }).join('');
+        <div class="studio-card-actions">
+          <button type="submit"><i data-lucide="save"></i><span>保存照片</span></button>
+          ${selectedPhoto.canReprocess ? `<button type="button" data-admin-reprocess-photo="${escapeHtml(selectedPhoto.id)}"><i data-lucide="rotate-cw"></i><span>重建</span></button>` : ''}
+          <button class="studio-danger-button" type="button" data-admin-delete-photo="${escapeHtml(selectedPhoto.id)}" aria-label="删除照片" title="删除照片"><i data-lucide="trash-2"></i></button>
+        </div>
+      </form>
+    </section>
+  ` : '';
   const activeTitle = activeGroup ? activeGroup.title : '全部照片';
   const activeDescription = activeGroup
     ? `${photoCountByGroup.get(activeGroup.id) || 0} 张照片 · ${activeGroup.visibility === 'hidden' ? '隐藏相册' : '公开相册'}`
@@ -2362,11 +2494,19 @@ function renderStudioAdmin() {
             <span>隐藏</span>
           </div>
         </section>
+        <div class="studio-sidebar-heading">
+          <span>相册</span>
+          <button class="studio-icon-button" type="button" data-action="studio-toggle-create" aria-label="新建相册" title="新建相册">
+            <i data-lucide="${state.studioCreateGroupOpen ? 'x' : 'plus'}"></i>
+          </button>
+        </div>
         <nav class="studio-album-nav" aria-label="相册筛选">
           ${albumButtons}
         </nav>
-        <form class="studio-group-form studio-create-group">
-          <h3>新建相册</h3>
+        <form class="studio-group-form studio-create-group" ${state.studioCreateGroupOpen ? '' : 'hidden'}>
+          <div class="studio-card-heading">
+            <div><span class="studio-eyebrow">新建</span><strong>创建相册</strong></div>
+          </div>
           <label class="studio-field">
             <span>名称</span>
             <input name="title" placeholder="生日、旅行、日常" required />
@@ -2392,56 +2532,73 @@ function renderStudioAdmin() {
             <span>介绍</span>
             <textarea name="description" rows="2" placeholder="写给这个相册的一句话"></textarea>
           </label>
-          <button type="submit">创建相册</button>
+          <div class="studio-row-actions">
+            <button type="submit"><i data-lucide="plus"></i><span>创建相册</span></button>
+          </div>
         </form>
       </aside>
 
       <main class="studio-workspace">
-        <section class="studio-workspace-head">
+        <section class="studio-workspace-head studio-library-toolbar">
           <div>
-            <p class="kicker">Library</p>
+            <p class="kicker">图库</p>
             <h3>${escapeHtml(activeTitle)}</h3>
             <span>${escapeHtml(activeDescription)}</span>
           </div>
           <div class="studio-workspace-actions">
-            <button type="button" data-action="admin-refresh">刷新</button>
+            <label class="studio-search">
+              <i data-lucide="search"></i>
+              <input type="search" value="${escapeHtml(state.studioSearch)}" data-studio-search placeholder="搜索照片" aria-label="搜索照片" />
+              <button type="button" data-action="studio-clear-search" aria-label="清除搜索" title="清除搜索" ${state.studioSearch ? '' : 'hidden'}><i data-lucide="x"></i></button>
+            </label>
+            <button class="studio-primary-action" type="button" data-action="studio-toggle-upload">
+              <i data-lucide="upload-cloud"></i><span>${state.studioUploadOpen ? '收起上传' : '上传照片'}</span>
+            </button>
           </div>
         </section>
 
-        <section class="studio-upload-panel">
-          <div>
-            <h3>上传照片</h3>
-            <p>选择目标相册后批量上传，系统会生成公开展示用 WebP 图片。</p>
-          </div>
-          <form class="studio-upload-form studio-upload-row">
-            <label class="studio-field">
-              <span>目标相册</span>
-              <select name="groupId" required ${groups.length ? '' : 'disabled'}>${groupOptions}</select>
-            </label>
-            <label class="studio-field">
-              <span>单张标题</span>
-              <input name="title" placeholder="只上传一张时使用" />
-            </label>
-            <label class="studio-field">
-              <span>批量前缀</span>
-              <input name="titlePrefix" placeholder="批量上传时使用" value="Gallery" />
-            </label>
-            <label class="studio-field">
-              <span>拍摄日期</span>
-              <input name="capturedAt" type="date" />
-            </label>
-            <label class="studio-field studio-wide">
-              <span>图片介绍</span>
-              <textarea name="description" rows="2" placeholder="可选，会写入本次上传的照片"></textarea>
-            </label>
-            <label class="studio-field studio-file-field">
-              <span>选择照片</span>
+        <section class="studio-upload-panel" ${state.studioUploadOpen ? '' : 'hidden'}>
+          <header>
+            <div><span class="studio-eyebrow">导入</span><h3>上传照片</h3></div>
+            <button class="studio-icon-button" type="button" data-action="studio-toggle-upload" aria-label="关闭上传" title="关闭"><i data-lucide="x"></i></button>
+          </header>
+          <form class="studio-upload-form">
+            <label class="studio-dropzone">
               <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required ${groups.length ? '' : 'disabled'} />
+              <i data-lucide="upload-cloud"></i>
+              <strong>选择照片</strong>
+              <em class="studio-file-count" data-studio-file-count>未选择文件</em>
             </label>
-            <em class="studio-file-count" data-studio-file-count>未选择文件</em>
-            <div class="studio-row-actions">
-              <button type="submit" ${groups.length ? '' : 'disabled'}>上传照片</button>
+            <div class="studio-upload-fields">
+              <label class="studio-field">
+                <span>目标相册</span>
+                <select name="groupId" required ${groups.length ? '' : 'disabled'}>${groupOptions}</select>
+              </label>
+              <label class="studio-field">
+                <span>批量标题</span>
+                <input name="titlePrefix" value="Gallery" />
+              </label>
+              <label class="studio-field">
+                <span>拍摄日期</span>
+                <input name="capturedAt" type="date" />
+              </label>
+              <details class="studio-upload-more">
+                <summary><i data-lucide="more-horizontal"></i><span>更多信息</span></summary>
+                <div>
+                  <label class="studio-field">
+                    <span>单张标题</span>
+                    <input name="title" />
+                  </label>
+                  <label class="studio-field">
+                    <span>图片介绍</span>
+                    <textarea name="description" rows="2"></textarea>
+                  </label>
+                </div>
+              </details>
             </div>
+            <footer class="studio-upload-actions">
+              <button type="submit" ${groups.length ? '' : 'disabled'}><i data-lucide="upload-cloud"></i><span>开始上传</span></button>
+            </footer>
           </form>
         </section>
 
@@ -2449,21 +2606,57 @@ function renderStudioAdmin() {
           <div class="studio-section-head">
             <div>
               <h3>照片</h3>
-              <p>${visiblePhotos.length} 张正在当前视图中</p>
+              <p data-studio-result-count>${visiblePhotos.length} 张</p>
             </div>
           </div>
-          <div class="studio-photo-grid">${photoCards || '<p class="studio-empty">当前视图还没有照片。</p>'}</div>
+          <div class="studio-photo-grid">
+            ${photoTiles || '<p class="studio-empty">当前相册还没有照片。</p>'}
+            <p class="studio-empty" data-studio-search-empty hidden>没有匹配的照片。</p>
+          </div>
         </section>
       </main>
 
       <aside class="studio-inspector">
-        <section class="studio-section">
-          <h3>${activeGroup ? '当前相册设置' : '相册设置'}</h3>
-          <div class="studio-list">${inspectorGroups || '<p class="studio-empty">还没有相册。</p>'}</div>
-        </section>
+        ${photoInspector || groupInspector || `
+          <section class="studio-inspector-empty">
+            <span><i data-lucide="album"></i></span>
+            <div>
+              <h3>图库概览</h3>
+              <p>${photos.length} 张照片，${groups.length} 个相册</p>
+            </div>
+          </section>
+        `}
       </aside>
     </div>
   `;
+  hydrateStudioIcons();
+  applyStudioPhotoSearch(state.studioSearch);
+}
+
+function hydrateStudioIcons() {
+  if (!galleryEls.studioAdmin) return;
+  createIcons({
+    attrs: { 'aria-hidden': 'true', 'stroke-width': '1.8' },
+    icons: STUDIO_ICONS,
+    root: galleryEls.studioAdmin,
+  });
+}
+
+function applyStudioPhotoSearch(query) {
+  const normalized = String(query || '').trim().toLowerCase();
+  const tiles = [...app.querySelectorAll('[data-studio-photo-tile]')] as HTMLElement[];
+  let visible = 0;
+  tiles.forEach((tile) => {
+    const match = !normalized || String(tile.dataset.search || '').includes(normalized);
+    tile.hidden = !match;
+    if (match) visible += 1;
+  });
+  const count = app.querySelector('[data-studio-result-count]');
+  if (count) count.textContent = `${visible} 张`;
+  const empty = app.querySelector('[data-studio-search-empty]') as HTMLElement | null;
+  if (empty) empty.hidden = !normalized || visible > 0;
+  const clear = app.querySelector('[data-action="studio-clear-search"]') as HTMLElement | null;
+  if (clear) clear.hidden = !normalized;
 }
 
 function formJson(form) {
