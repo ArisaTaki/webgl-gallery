@@ -237,6 +237,8 @@ try {
       tileRatio: tile.getBoundingClientRect().width / tile.querySelector('.studio-photo-thumb').getBoundingClientRect().height,
       bodyOverflow: document.documentElement.scrollWidth - innerWidth,
       galleryChromeHidden: getComputedStyle(document.querySelector('.about-link')).opacity === '0',
+      gridClientHeight: grid.clientHeight,
+      gridScrollHeight: grid.scrollHeight,
     };
   })()`);
   assert(desktop.columns === 3, `Desktop dashboard should have 3 columns: ${JSON.stringify(desktop)}`);
@@ -244,16 +246,38 @@ try {
   assert(desktop.tiles > 0, `Studio should render photo tiles: ${JSON.stringify(desktop)}`);
   assert(desktop.bodyOverflow <= 1, `Desktop Studio overflows horizontally: ${JSON.stringify(desktop)}`);
   assert(desktop.galleryChromeHidden, `Gallery chrome should be hidden in Studio: ${JSON.stringify(desktop)}`);
+  assert(desktop.gridScrollHeight > desktop.gridClientHeight, `Photo grid should be scrollable: ${JSON.stringify(desktop)}`);
 
-  await evaluate(client, `document.querySelector('.studio-photo-tile button').click()`);
+  await evaluate(client, `document.querySelector('[data-action="studio-toggle-create"]').click()`);
+  await waitFor(client, 'document.querySelector("[data-studio-create-dialog]")?.open', 'create album dialog');
+  const dialog = await evaluate(client, `({
+    open: document.querySelector('[data-studio-create-dialog]')?.open,
+    modalForm: Boolean(document.querySelector('[data-studio-create-dialog] .studio-group-form')),
+    sidebarForm: Boolean(document.querySelector('.studio-sidebar .studio-group-form')),
+  })`);
+  assert(dialog.open && dialog.modalForm && !dialog.sidebarForm, `Create album should use a modal dialog: ${JSON.stringify(dialog)}`);
+  await screenshot(client, '/tmp/studio-ui-v3-dialog.png');
+  await evaluate(client, `document.querySelector('[data-action="studio-close-create"]').click()`);
+  await waitFor(client, '!document.querySelector("[data-studio-create-dialog]")', 'closed create album dialog');
+
+  const wheel = await evaluate(client, `(() => {
+    const grid = document.querySelector('.studio-photo-grid');
+    const before = grid.scrollTop;
+    document.querySelector('.studio-workspace-head').dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 360 }));
+    return { before, after: grid.scrollTop };
+  })()`);
+  assert(wheel.after > wheel.before, `Wheel over Studio toolbar should scroll photos: ${JSON.stringify(wheel)}`);
+
+  await evaluate(client, `document.querySelectorAll('[data-studio-photo-select]')[7].click()`);
   await waitFor(client, 'document.querySelectorAll(".studio-photo-form").length === 1', 'single photo inspector');
   checkpoints.push(await evaluate(client, `({ step: 'select', href: location.href, mode: document.querySelector('.gallery-shell')?.dataset.mode })`));
   const selection = await evaluate(client, `({
     forms: document.querySelectorAll('.studio-photo-form').length,
     selected: document.querySelectorAll('.studio-photo-tile.is-selected').length,
     inspectorVisible: document.querySelector('.studio-inspector-preview')?.getBoundingClientRect().height > 0,
+    scrollTop: document.querySelector('.studio-photo-grid').scrollTop,
   })`);
-  assert(selection.forms === 1 && selection.selected === 1 && selection.inspectorVisible, `Photo selection failed: ${JSON.stringify(selection)}`);
+  assert(selection.forms === 1 && selection.selected === 1 && selection.inspectorVisible && selection.scrollTop > 0, `Photo selection or scroll preservation failed: ${JSON.stringify(selection)}`);
 
   await evaluate(client, `(() => {
     const search = document.querySelector('[data-studio-search]');
@@ -266,11 +290,31 @@ try {
   })`);
   assert(search.visible === 0 && search.empty, `Photo search empty state failed: ${JSON.stringify(search)}`);
   await evaluate(client, `document.querySelector('[data-action="studio-clear-search"]').click()`);
+
+  await evaluate(client, `(() => {
+    const checks = document.querySelectorAll('[data-studio-photo-check]');
+    checks[0].click();
+    document.querySelectorAll('[data-studio-photo-check]')[1].click();
+  })()`);
+  await waitFor(client, 'document.querySelectorAll(".studio-photo-tile.is-checked").length === 2', 'multi-selection');
+  const batch = await evaluate(client, `({
+    checked: document.querySelectorAll('.studio-photo-tile.is-checked').length,
+    visible: !document.querySelector('.studio-batch-bar').hidden,
+    actions: document.querySelectorAll('.studio-batch-actions button').length,
+  })`);
+  assert(batch.checked === 2 && batch.visible && batch.actions >= 5, `Batch toolbar failed: ${JSON.stringify(batch)}`);
+  await screenshot(client, '/tmp/studio-ui-v2-desktop.png');
+  await evaluate(client, `document.querySelector('[data-action="studio-bulk-hide"]').click()`);
+  await waitFor(client, 'document.querySelector(".studio-batch-bar")?.hidden', 'batch hide completion', 20000);
+  const bulkMutation = await evaluate(client, `fetch('/api/admin/gallery', { cache: 'no-store' }).then((response) => response.json()).then((gallery) => ({ hidden: gallery.photos.filter((photo) => photo.status === 'hidden').length }))`);
+  assert(bulkMutation.hidden >= 2, `Batch hide did not persist: ${JSON.stringify(bulkMutation)}`);
+
+  await evaluate(client, `document.querySelector('[data-action="studio-density-compact"]').click()`);
+  await waitFor(client, 'document.querySelector(".studio-photo-grid")?.classList.contains("is-compact")', 'compact grid');
   await evaluate(client, `document.querySelector('[data-action="studio-toggle-upload"]').click()`);
   await waitFor(client, '!document.querySelector(".studio-upload-panel")?.hidden', 'upload panel');
   checkpoints.push(await evaluate(client, `({ step: 'upload', href: location.href, mode: document.querySelector('.gallery-shell')?.dataset.mode })`));
   assert(checkpoints.every((item) => item.mode === 'studio' && new URL(item.href).pathname === '/studio'), `Studio navigation changed unexpectedly: ${JSON.stringify(checkpoints)}`);
-  await screenshot(client, '/tmp/studio-ui-v2-desktop.png');
 
   await setViewport(client, 390, 844, 2);
   await new Promise((resolve) => setTimeout(resolve, 250));
@@ -293,10 +337,14 @@ try {
 
   console.log(JSON.stringify({
     ok: failures.length === 0,
-    screenshots: ['/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png'],
+    screenshots: ['/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png'],
     desktop,
+    dialog,
+    wheel,
     selection,
     search,
+    batch,
+    bulkMutation,
     mobile,
     checkpoints,
     failures,

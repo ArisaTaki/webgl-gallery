@@ -3,11 +3,17 @@ import {
   Album as AlbumIcon,
   ArrowLeft,
   Check,
+  CheckSquare,
   ChevronDown,
+  Copy,
   Eye,
   EyeOff,
+  ExternalLink,
   Folder,
+  FolderInput,
+  Grid2X2,
   Image as ImageIcon,
+  List,
   LogOut,
   MoreHorizontal,
   Plus,
@@ -16,6 +22,8 @@ import {
   Save,
   Search,
   Settings,
+  Square,
+  Star,
   Trash2,
   UploadCloud,
   X,
@@ -94,11 +102,17 @@ const STUDIO_ICONS = {
   Album: AlbumIcon,
   ArrowLeft,
   Check,
+  CheckSquare,
   ChevronDown,
+  Copy,
   Eye,
   EyeOff,
+  ExternalLink,
   Folder,
+  FolderInput,
+  Grid2X2,
   Image: ImageIcon,
+  List,
   LogOut,
   MoreHorizontal,
   Plus,
@@ -107,6 +121,8 @@ const STUDIO_ICONS = {
   Save,
   Search,
   Settings,
+  Square,
+  Star,
   Trash2,
   UploadCloud,
   X,
@@ -228,8 +244,15 @@ const state = {
   adminStatus: '',
   studioActiveGroupId: 'all',
   studioCreateGroupOpen: false,
+  studioDensity: 'comfortable',
+  studioInspectorScrollTop: 0,
+  studioPhotoScrollTop: 0,
+  studioPhotoSort: 'manual',
   studioSearch: '',
   studioSelectedPhotoId: '',
+  studioSelectedPhotoIds: [],
+  studioSidebarScrollTop: 0,
+  studioStatusFilter: 'all',
   studioUploadOpen: false,
   curveLatency: 0,
   currentGroupSlug: '',
@@ -1505,14 +1528,27 @@ function attachEvents() {
     const reprocessPhoto = event.target.closest('[data-admin-reprocess-photo]');
     const deleteGroup = event.target.closest('[data-admin-delete-group]');
     const groupFilter = event.target.closest('[data-studio-group-filter]');
+    const photoCheck = event.target.closest('[data-studio-photo-check]');
     const photoSelect = event.target.closest('[data-studio-photo-select]');
     const setupLanguageButton = event.target.closest('[data-setup-language]');
     const thumb = event.target.closest('[data-index]');
 
+    const createDialog = event.target.closest('[data-studio-create-dialog]');
+    if (createDialog && event.target === createDialog) {
+      closeStudioCreateDialog();
+      return;
+    }
     if (groupFilter) {
       state.studioActiveGroupId = groupFilter.dataset.studioGroupFilter || 'all';
       state.studioSelectedPhotoId = '';
+      state.studioSelectedPhotoIds = [];
+      state.studioPhotoScrollTop = 0;
+      state.studioInspectorScrollTop = 0;
       renderStudioAdmin();
+      return;
+    }
+    if (photoCheck) {
+      toggleStudioPhotoSelection(photoCheck.dataset.studioPhotoCheck || '');
       return;
     }
     if (photoSelect) {
@@ -1609,6 +1645,9 @@ function attachEvents() {
       state.studioCreateGroupOpen = !state.studioCreateGroupOpen;
       renderStudioAdmin();
     }
+    if (name === 'studio-close-create') {
+      closeStudioCreateDialog();
+    }
     if (name === 'studio-toggle-upload') {
       state.studioUploadOpen = !state.studioUploadOpen;
       renderStudioAdmin();
@@ -1622,6 +1661,38 @@ function attachEvents() {
     if (name === 'studio-clear-selection') {
       state.studioSelectedPhotoId = '';
       renderStudioAdmin();
+    }
+    if (name === 'studio-select-visible') {
+      selectVisibleStudioPhotos();
+    }
+    if (name === 'studio-clear-batch') {
+      state.studioSelectedPhotoIds = [];
+      renderStudioAdmin();
+    }
+    if (name === 'studio-bulk-move') {
+      const groupId = (app.querySelector('[data-studio-bulk-group]') as HTMLSelectElement | null)?.value || '';
+      if (groupId) onAdminBulkUpdate({ groupId }, '移动');
+    }
+    if (name === 'studio-bulk-show') onAdminBulkUpdate({ status: 'active' }, '显示');
+    if (name === 'studio-bulk-hide') onAdminBulkUpdate({ status: 'hidden' }, '隐藏');
+    if (name === 'studio-bulk-delete') onAdminBulkDelete();
+    if (name === 'studio-density-comfortable') {
+      state.studioDensity = 'comfortable';
+      renderStudioAdmin();
+    }
+    if (name === 'studio-density-compact') {
+      state.studioDensity = 'compact';
+      renderStudioAdmin();
+    }
+    if (name === 'studio-preview-photo') {
+      const src = action.dataset.src || '';
+      if (src) window.open(src, '_blank', 'noopener,noreferrer');
+    }
+    if (name === 'studio-copy-photo-link') {
+      copyStudioPhotoLink(action.dataset.src || '');
+    }
+    if (name === 'studio-set-cover') {
+      onAdminSetGroupCover(action.dataset.groupId || '', action.dataset.photoId || '');
     }
   });
 
@@ -1663,6 +1734,16 @@ function attachEvents() {
     if (event.target.matches('input[name="photos"]')) {
       updateStudioFileCount(event.target.form);
     }
+    if (event.target.matches('[data-studio-status-filter]')) {
+      state.studioStatusFilter = event.target.value || 'all';
+      state.studioPhotoScrollTop = 0;
+      renderStudioAdmin();
+    }
+    if (event.target.matches('[data-studio-photo-sort]')) {
+      state.studioPhotoSort = event.target.value || 'manual';
+      state.studioPhotoScrollTop = 0;
+      renderStudioAdmin();
+    }
   });
 
   app.addEventListener('input', (event: any) => {
@@ -1670,6 +1751,34 @@ function attachEvents() {
     state.studioSearch = event.target.value || '';
     applyStudioPhotoSearch(state.studioSearch);
   });
+
+  app.addEventListener('dragover', (event: any) => {
+    const dropzone = event.target.closest('.studio-dropzone');
+    if (!dropzone) return;
+    event.preventDefault();
+    dropzone.classList.add('is-dragging');
+  });
+  app.addEventListener('dragleave', (event: any) => {
+    const dropzone = event.target.closest('.studio-dropzone');
+    if (!dropzone || dropzone.contains(event.relatedTarget)) return;
+    dropzone.classList.remove('is-dragging');
+  });
+  app.addEventListener('drop', (event: any) => {
+    const dropzone = event.target.closest('.studio-dropzone');
+    if (!dropzone) return;
+    event.preventDefault();
+    dropzone.classList.remove('is-dragging');
+    const input = dropzone.querySelector('input[name="photos"]');
+    if (!input || !event.dataTransfer?.files?.length) return;
+    input.files = event.dataTransfer.files;
+    updateStudioFileCount(input.form);
+  });
+
+  app.addEventListener('scroll', (event: any) => {
+    if (event.target.matches?.('.studio-photo-grid')) state.studioPhotoScrollTop = event.target.scrollTop;
+    if (event.target.matches?.('.studio-sidebar')) state.studioSidebarScrollTop = event.target.scrollTop;
+    if (event.target.matches?.('.studio-inspector')) state.studioInspectorScrollTop = event.target.scrollTop;
+  }, true);
 }
 
 function onMorphEnter(event: any) {
@@ -1783,7 +1892,19 @@ function resize() {
 }
 
 function onWheel(event) {
-  if (state.mode === VIEW.setup || state.mode === VIEW.studio || state.mode === VIEW.about) return;
+  if (state.mode === VIEW.studio) {
+    let scrollTarget = event.target instanceof Element
+      ? event.target.closest('.studio-photo-grid, .studio-sidebar, .studio-inspector, .studio-dashboard')
+      : null;
+    if (scrollTarget && scrollTarget.scrollHeight <= scrollTarget.clientHeight) scrollTarget = null;
+    if (!scrollTarget) scrollTarget = app.querySelector('.studio-photo-grid');
+    if (scrollTarget && scrollTarget.scrollHeight > scrollTarget.clientHeight) {
+      event.preventDefault();
+      scrollTarget.scrollTop += event.deltaY;
+    }
+    return;
+  }
+  if (state.mode === VIEW.setup || state.mode === VIEW.about) return;
   event.preventDefault();
 
   if (state.mode === VIEW.work) {
@@ -1905,6 +2026,30 @@ function onKeyDown(event) {
   if (state.keyBuffer.endsWith('webgl')) {
     setMode(VIEW.studio);
     (app.querySelector('input[name="key"]') as HTMLInputElement | null)?.focus();
+  }
+
+  if (state.mode === VIEW.studio) {
+    if (key === 'Escape') {
+      event.preventDefault();
+      if (state.studioCreateGroupOpen) closeStudioCreateDialog();
+      else if (state.studioSelectedPhotoIds.length) {
+        state.studioSelectedPhotoIds = [];
+        renderStudioAdmin();
+      } else if (state.studioSelectedPhotoId) {
+        state.studioSelectedPhotoId = '';
+        renderStudioAdmin();
+      } else if (state.studioUploadOpen) {
+        state.studioUploadOpen = false;
+        renderStudioAdmin();
+      } else setMode(VIEW.index);
+      return;
+    }
+    const editing = event.target instanceof Element && Boolean(event.target.closest('input, textarea, select, [contenteditable="true"]'));
+    if ((event.metaKey || event.ctrlKey) && lowerKey === 'a' && !editing) {
+      event.preventDefault();
+      selectVisibleStudioPhotos();
+    }
+    return;
   }
 
   if (state.mode === VIEW.about) {
@@ -2172,6 +2317,7 @@ async function onAdminLogout() {
   state.adminAuthenticated = false;
   state.adminGallery = { groups: [], photos: [] };
   state.studioSelectedPhotoId = '';
+  state.studioSelectedPhotoIds = [];
   setStudioStatus('Logged out.');
   renderStudioAdmin();
 }
@@ -2191,6 +2337,7 @@ async function onAdminGroupSave(event: any, form) {
       state.studioActiveGroupId = result.group.id;
       state.studioCreateGroupOpen = false;
       state.studioSelectedPhotoId = '';
+      state.studioSelectedPhotoIds = [];
     }
     await loadAdminGallery();
   } catch (error: any) {
@@ -2290,6 +2437,104 @@ async function onAdminReprocessPhoto(id) {
   }
 }
 
+function closeStudioCreateDialog() {
+  state.studioCreateGroupOpen = false;
+  renderStudioAdmin();
+}
+
+function toggleStudioPhotoSelection(id) {
+  if (!id) return;
+  const selected = new Set(state.studioSelectedPhotoIds);
+  if (selected.has(id)) selected.delete(id);
+  else selected.add(id);
+  state.studioSelectedPhotoIds = [...selected];
+  renderStudioAdmin();
+}
+
+function selectVisibleStudioPhotos() {
+  const visibleIds = [...app.querySelectorAll('[data-studio-photo-tile]:not([hidden])')]
+    .map((tile: any) => tile.dataset.photoId)
+    .filter(Boolean);
+  if (!visibleIds.length) return;
+  const selected = new Set(state.studioSelectedPhotoIds);
+  const allSelected = visibleIds.every((id) => selected.has(id));
+  visibleIds.forEach((id) => allSelected ? selected.delete(id) : selected.add(id));
+  state.studioSelectedPhotoIds = [...selected];
+  renderStudioAdmin();
+}
+
+async function onAdminBulkUpdate(patch, label) {
+  const ids = [...state.studioSelectedPhotoIds];
+  if (!ids.length) return;
+  setStudioStatus(`正在${label} ${ids.length} 张照片...`);
+  try {
+    for (const [index, id] of ids.entries()) {
+      await adminFetch(`/api/admin/photos/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      setStudioStatus(`正在${label} ${index + 1} / ${ids.length}...`);
+    }
+    state.studioSelectedPhotoIds = [];
+    state.studioSelectedPhotoId = '';
+    await loadAdminGallery();
+    await refreshPublicPhotos();
+    setStudioStatus(`已${label} ${ids.length} 张照片。`);
+  } catch (error: any) {
+    await loadAdminGallery();
+    setStudioStatus(error.message);
+  }
+}
+
+async function onAdminBulkDelete() {
+  const ids = [...state.studioSelectedPhotoIds];
+  if (!ids.length || !window.confirm(`确定删除选中的 ${ids.length} 张照片吗？此操作无法撤销。`)) return;
+  setStudioStatus(`正在删除 ${ids.length} 张照片...`);
+  try {
+    for (const [index, id] of ids.entries()) {
+      await adminFetch(`/api/admin/photos/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setStudioStatus(`正在删除 ${index + 1} / ${ids.length}...`);
+    }
+    state.studioSelectedPhotoIds = [];
+    state.studioSelectedPhotoId = '';
+    await loadAdminGallery();
+    await refreshPublicPhotos();
+    setStudioStatus(`已删除 ${ids.length} 张照片。`);
+  } catch (error: any) {
+    await loadAdminGallery();
+    setStudioStatus(error.message);
+  }
+}
+
+async function copyStudioPhotoLink(src) {
+  if (!src) return;
+  const url = new URL(src, window.location.href).href;
+  try {
+    await navigator.clipboard.writeText(url);
+    setStudioStatus('图片链接已复制。');
+  } catch {
+    setStudioStatus('浏览器未允许复制，请打开大图后复制地址。');
+  }
+}
+
+async function onAdminSetGroupCover(groupId, photoId) {
+  if (!groupId || !photoId) return;
+  setStudioStatus('正在设置相册封面...');
+  try {
+    await adminFetch(`/api/admin/groups/${encodeURIComponent(groupId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coverPhotoId: photoId }),
+    });
+    await loadAdminGallery();
+    await refreshPublicPhotos();
+    setStudioStatus('已设为相册封面。');
+  } catch (error: any) {
+    setStudioStatus(error.message);
+  }
+}
+
 async function refreshPublicPhotos() {
   state.photos = await loadPhotos();
   workImageDecodeCache.clear();
@@ -2315,6 +2560,12 @@ async function adminFetch(url, options: LooseRecord = {}) {
 
 function renderStudioAdmin() {
   if (!galleryEls.studioLoginForm || !galleryEls.studioAdmin || !galleryEls.studioAdminBody) return;
+  const currentPhotoGrid = app.querySelector('.studio-photo-grid') as HTMLElement | null;
+  const currentSidebar = app.querySelector('.studio-sidebar') as HTMLElement | null;
+  const currentInspector = app.querySelector('.studio-inspector') as HTMLElement | null;
+  if (currentPhotoGrid) state.studioPhotoScrollTop = currentPhotoGrid.scrollTop;
+  if (currentSidebar) state.studioSidebarScrollTop = currentSidebar.scrollTop;
+  if (currentInspector) state.studioInspectorScrollTop = currentInspector.scrollTop;
   galleryEls.studioLoginForm.hidden = state.adminAuthenticated;
   galleryEls.studioAdmin.hidden = !state.adminAuthenticated;
   if (!state.adminAuthenticated) {
@@ -2332,9 +2583,23 @@ function renderStudioAdmin() {
   const activeGroupId = selectedGroupExists ? state.studioActiveGroupId : 'all';
   state.studioActiveGroupId = activeGroupId;
   const activeGroup = groups.find((group) => group.id === activeGroupId);
-  const visiblePhotos = activeGroupId === 'all'
+  let visiblePhotos = activeGroupId === 'all'
     ? photos
     : photos.filter((photo) => photo.groupId === activeGroupId);
+  if (state.studioStatusFilter !== 'all') {
+    visiblePhotos = visiblePhotos.filter((photo) => photo.status === state.studioStatusFilter);
+  }
+  visiblePhotos = [...visiblePhotos].sort((left, right) => {
+    if (state.studioPhotoSort === 'title') return String(left.title || '').localeCompare(String(right.title || ''), 'zh-CN');
+    const leftDate = Date.parse(left.capturedAt || left.createdAt || '') || 0;
+    const rightDate = Date.parse(right.capturedAt || right.createdAt || '') || 0;
+    if (state.studioPhotoSort === 'newest') return rightDate - leftDate;
+    if (state.studioPhotoSort === 'oldest') return leftDate - rightDate;
+    return (Number(left.sortOrder) || 0) - (Number(right.sortOrder) || 0);
+  });
+  const photoIds = new Set(photos.map((photo) => photo.id));
+  state.studioSelectedPhotoIds = state.studioSelectedPhotoIds.filter((id) => photoIds.has(id));
+  const selectedPhotoIds = new Set(state.studioSelectedPhotoIds);
   let selectedPhoto = photos.find((photo) => photo.id === state.studioSelectedPhotoId);
   if (selectedPhoto && activeGroupId !== 'all' && selectedPhoto.groupId !== activeGroupId) selectedPhoto = null;
   if (!selectedPhoto) state.studioSelectedPhotoId = '';
@@ -2356,6 +2621,8 @@ function renderStudioAdmin() {
       </button>
     `),
   ].join('');
+  const activeGroupPhotoCount = activeGroup ? photoCountByGroup.get(activeGroup.id) || 0 : 0;
+  const canDeleteActiveGroup = Boolean(activeGroup && activeGroup.id !== 'default' && activeGroupPhotoCount === 0);
   const groupInspector = activeGroup ? `
     <form class="studio-group-form studio-group-card" data-group-id="${escapeHtml(activeGroup.id)}">
       <div class="studio-card-heading">
@@ -2363,7 +2630,7 @@ function renderStudioAdmin() {
           <span class="studio-eyebrow">相册设置</span>
           <strong>${escapeHtml(activeGroup.title)}</strong>
         </div>
-        <span>${photoCountByGroup.get(activeGroup.id) || 0} 张</span>
+        <span>${activeGroupPhotoCount} 张</span>
       </div>
       <label class="studio-field">
         <span>相册名称</span>
@@ -2392,15 +2659,19 @@ function renderStudioAdmin() {
       </label>
       <div class="studio-row-actions">
         <button type="submit"><i data-lucide="save"></i><span>保存相册</span></button>
-        <button class="studio-danger-button" type="button" data-admin-delete-group="${escapeHtml(activeGroup.id)}" aria-label="删除相册" title="删除相册"><i data-lucide="trash-2"></i></button>
+        <button class="studio-danger-button" type="button" data-admin-delete-group="${escapeHtml(activeGroup.id)}" aria-label="删除相册" title="${canDeleteActiveGroup ? '删除相册' : activeGroup.id === 'default' ? '默认相册不能删除' : '请先移动或删除相册内照片'}" ${canDeleteActiveGroup ? '' : 'disabled'}><i data-lucide="trash-2"></i></button>
       </div>
     </form>
   ` : '';
   const photoTiles = visiblePhotos.map((photo) => {
     const group = groupById.get(photo.groupId);
     const searchText = `${photo.title || ''} ${photo.description || ''} ${group?.title || ''}`.toLowerCase();
+    const isChecked = selectedPhotoIds.has(photo.id);
     return `
-      <article class="studio-photo-tile${selectedPhoto?.id === photo.id ? ' is-selected' : ''}" data-studio-photo-tile data-search="${escapeHtml(searchText)}">
+      <article class="studio-photo-tile${selectedPhoto?.id === photo.id ? ' is-selected' : ''}${isChecked ? ' is-checked' : ''}" data-studio-photo-tile data-photo-id="${escapeHtml(photo.id)}" data-search="${escapeHtml(searchText)}">
+        <button class="studio-photo-check" type="button" data-studio-photo-check="${escapeHtml(photo.id)}" aria-label="${isChecked ? '取消选择' : '选择'} ${escapeHtml(photo.title || '未命名照片')}" aria-pressed="${isChecked}">
+          <i data-lucide="${isChecked ? 'check-square' : 'square'}"></i>
+        </button>
         <button type="button" data-studio-photo-select="${escapeHtml(photo.id)}" aria-label="编辑 ${escapeHtml(photo.title || '未命名照片')}">
           <span class="studio-photo-thumb">
             <img src="${escapeHtml(photo.thumb || photo.medium || '')}" alt="" loading="lazy" />
@@ -2420,6 +2691,9 @@ function renderStudioAdmin() {
       </article>
     `;
   }).join('');
+  const selectedPhotoSrc = selectedPhoto ? selectedPhoto.large || selectedPhoto.medium || selectedPhoto.thumb || '' : '';
+  const selectedPhotoGroup = selectedPhoto ? groupById.get(selectedPhoto.groupId) : null;
+  const selectedPhotoIsCover = Boolean(selectedPhotoGroup && selectedPhotoGroup.coverPhotoId === selectedPhoto?.id);
   const photoInspector = selectedPhoto ? `
     <section class="studio-inspector-panel">
       <header class="studio-inspector-head">
@@ -2431,6 +2705,11 @@ function renderStudioAdmin() {
       </header>
       <div class="studio-inspector-preview">
         <img src="${escapeHtml(selectedPhoto.medium || selectedPhoto.thumb || '')}" alt="" />
+      </div>
+      <div class="studio-photo-quick-actions">
+        <button type="button" data-action="studio-preview-photo" data-src="${escapeHtml(selectedPhotoSrc)}"><i data-lucide="external-link"></i><span>打开大图</span></button>
+        <button type="button" data-action="studio-copy-photo-link" data-src="${escapeHtml(selectedPhotoSrc)}"><i data-lucide="copy"></i><span>复制链接</span></button>
+        <button type="button" data-action="studio-set-cover" data-group-id="${escapeHtml(selectedPhoto.groupId)}" data-photo-id="${escapeHtml(selectedPhoto.id)}" ${selectedPhotoIsCover ? 'disabled' : ''}><i data-lucide="star"></i><span>${selectedPhotoIsCover ? '当前封面' : '设为封面'}</span></button>
       </div>
       <form class="studio-photo-form" data-photo-id="${escapeHtml(selectedPhoto.id)}">
         <label class="studio-field">
@@ -2476,6 +2755,49 @@ function renderStudioAdmin() {
   const activeDescription = activeGroup
     ? `${photoCountByGroup.get(activeGroup.id) || 0} 张照片 · ${activeGroup.visibility === 'hidden' ? '隐藏相册' : '公开相册'}`
     : `${photos.length} 张照片 · ${groups.length} 个相册`;
+  const createGroupDialog = state.studioCreateGroupOpen ? `
+    <dialog class="studio-create-dialog" data-studio-create-dialog aria-labelledby="studio-create-title">
+      <div class="studio-dialog-head">
+        <div>
+          <span class="studio-eyebrow">新相册</span>
+          <h3 id="studio-create-title">创建相册</h3>
+          <p>建立一个新的照片分组，稍后可以继续修改名称与可见性。</p>
+        </div>
+        <button class="studio-icon-button" type="button" data-action="studio-close-create" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <form class="studio-group-form studio-create-group-dialog">
+        <label class="studio-field">
+          <span>相册名称</span>
+          <input name="title" placeholder="生日、旅行、日常" required autofocus />
+        </label>
+        <label class="studio-field">
+          <span>路径 Slug</span>
+          <input name="slug" placeholder="可留空自动生成" />
+        </label>
+        <div class="studio-inline-fields">
+          <label class="studio-field">
+            <span>排序</span>
+            <input name="sortOrder" type="number" value="${groups.length}" />
+          </label>
+          <label class="studio-field">
+            <span>可见性</span>
+            <select name="visibility">
+              <option value="public">公开</option>
+              <option value="hidden">隐藏</option>
+            </select>
+          </label>
+        </div>
+        <label class="studio-field">
+          <span>相册介绍</span>
+          <textarea name="description" rows="3" placeholder="写给这个相册的一句话"></textarea>
+        </label>
+        <div class="studio-dialog-actions">
+          <button type="button" data-action="studio-close-create">取消</button>
+          <button type="submit"><i data-lucide="plus"></i><span>创建相册</span></button>
+        </div>
+      </form>
+    </dialog>
+  ` : '';
 
   galleryEls.studioAdminBody.innerHTML = `
     <div class="studio-dashboard">
@@ -2503,39 +2825,6 @@ function renderStudioAdmin() {
         <nav class="studio-album-nav" aria-label="相册筛选">
           ${albumButtons}
         </nav>
-        <form class="studio-group-form studio-create-group" ${state.studioCreateGroupOpen ? '' : 'hidden'}>
-          <div class="studio-card-heading">
-            <div><span class="studio-eyebrow">新建</span><strong>创建相册</strong></div>
-          </div>
-          <label class="studio-field">
-            <span>名称</span>
-            <input name="title" placeholder="生日、旅行、日常" required />
-          </label>
-          <label class="studio-field">
-            <span>Slug</span>
-            <input name="slug" placeholder="可留空自动生成" />
-          </label>
-          <div class="studio-inline-fields">
-            <label class="studio-field">
-              <span>排序</span>
-              <input name="sortOrder" type="number" value="${groups.length}" />
-            </label>
-            <label class="studio-field">
-              <span>可见性</span>
-              <select name="visibility">
-                <option value="public">公开</option>
-                <option value="hidden">隐藏</option>
-              </select>
-            </label>
-          </div>
-          <label class="studio-field">
-            <span>介绍</span>
-            <textarea name="description" rows="2" placeholder="写给这个相册的一句话"></textarea>
-          </label>
-          <div class="studio-row-actions">
-            <button type="submit"><i data-lucide="plus"></i><span>创建相册</span></button>
-          </div>
-        </form>
       </aside>
 
       <main class="studio-workspace">
@@ -2554,6 +2843,26 @@ function renderStudioAdmin() {
             <button class="studio-primary-action" type="button" data-action="studio-toggle-upload">
               <i data-lucide="upload-cloud"></i><span>${state.studioUploadOpen ? '收起上传' : '上传照片'}</span>
             </button>
+          </div>
+        </section>
+
+        <section class="studio-batch-bar" ${state.studioSelectedPhotoIds.length ? '' : 'hidden'} aria-label="批量操作">
+          <div class="studio-batch-count">
+            <span><i data-lucide="check-square"></i></span>
+            <div><strong>已选择 ${state.studioSelectedPhotoIds.length} 张</strong><small>可批量移动、切换状态或删除</small></div>
+          </div>
+          <div class="studio-batch-actions">
+            <label>
+              <span class="sr-only">移动到相册</span>
+              <select data-studio-bulk-group aria-label="移动到相册">
+                ${groups.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.title)}</option>`).join('')}
+              </select>
+            </label>
+            <button type="button" data-action="studio-bulk-move"><i data-lucide="folder-input"></i><span>移动</span></button>
+            <button type="button" data-action="studio-bulk-show"><i data-lucide="eye"></i><span>显示</span></button>
+            <button type="button" data-action="studio-bulk-hide"><i data-lucide="eye-off"></i><span>隐藏</span></button>
+            <button class="studio-danger-button" type="button" data-action="studio-bulk-delete"><i data-lucide="trash-2"></i><span>删除</span></button>
+            <button class="studio-icon-button" type="button" data-action="studio-clear-batch" aria-label="取消选择" title="取消选择"><i data-lucide="x"></i></button>
           </div>
         </section>
 
@@ -2608,8 +2917,32 @@ function renderStudioAdmin() {
               <h3>照片</h3>
               <p data-studio-result-count>${visiblePhotos.length} 张</p>
             </div>
+            <div class="studio-view-controls">
+              <label class="studio-compact-select">
+                <span class="sr-only">显示状态</span>
+                <select data-studio-status-filter aria-label="显示状态">
+                  <option value="all" ${state.studioStatusFilter === 'all' ? 'selected' : ''}>全部状态</option>
+                  <option value="active" ${state.studioStatusFilter === 'active' ? 'selected' : ''}>仅显示</option>
+                  <option value="hidden" ${state.studioStatusFilter === 'hidden' ? 'selected' : ''}>仅隐藏</option>
+                </select>
+              </label>
+              <label class="studio-compact-select">
+                <span class="sr-only">照片排序</span>
+                <select data-studio-photo-sort aria-label="照片排序">
+                  <option value="manual" ${state.studioPhotoSort === 'manual' ? 'selected' : ''}>手动排序</option>
+                  <option value="newest" ${state.studioPhotoSort === 'newest' ? 'selected' : ''}>最新优先</option>
+                  <option value="oldest" ${state.studioPhotoSort === 'oldest' ? 'selected' : ''}>最早优先</option>
+                  <option value="title" ${state.studioPhotoSort === 'title' ? 'selected' : ''}>按标题</option>
+                </select>
+              </label>
+              <div class="studio-density-control" aria-label="网格密度">
+                <button type="button" data-action="studio-density-comfortable" class="${state.studioDensity === 'comfortable' ? 'is-active' : ''}" aria-label="舒适网格" title="舒适网格"><i data-lucide="grid-2-x-2"></i></button>
+                <button type="button" data-action="studio-density-compact" class="${state.studioDensity === 'compact' ? 'is-active' : ''}" aria-label="紧凑网格" title="紧凑网格"><i data-lucide="list"></i></button>
+              </div>
+              <button class="studio-select-visible" type="button" data-action="studio-select-visible"><i data-lucide="check-square"></i><span>全选当前</span></button>
+            </div>
           </div>
-          <div class="studio-photo-grid">
+          <div class="studio-photo-grid${state.studioDensity === 'compact' ? ' is-compact' : ''}">
             ${photoTiles || '<p class="studio-empty">当前相册还没有照片。</p>'}
             <p class="studio-empty" data-studio-search-empty hidden>没有匹配的照片。</p>
           </div>
@@ -2628,9 +2961,11 @@ function renderStudioAdmin() {
         `}
       </aside>
     </div>
+    ${createGroupDialog}
   `;
   hydrateStudioIcons();
   applyStudioPhotoSearch(state.studioSearch);
+  syncStudioAdminUi();
 }
 
 function hydrateStudioIcons() {
@@ -2640,6 +2975,19 @@ function hydrateStudioIcons() {
     icons: STUDIO_ICONS,
     root: galleryEls.studioAdmin,
   });
+}
+
+function syncStudioAdminUi() {
+  const photoGrid = app.querySelector('.studio-photo-grid') as HTMLElement | null;
+  const sidebar = app.querySelector('.studio-sidebar') as HTMLElement | null;
+  const inspector = app.querySelector('.studio-inspector') as HTMLElement | null;
+  if (photoGrid) photoGrid.scrollTop = state.studioPhotoScrollTop;
+  if (sidebar) sidebar.scrollTop = state.studioSidebarScrollTop;
+  if (inspector) inspector.scrollTop = state.studioInspectorScrollTop;
+  const dialog = app.querySelector('[data-studio-create-dialog]') as HTMLDialogElement | null;
+  if (!dialog || dialog.open) return;
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else dialog.setAttribute('open', '');
 }
 
 function applyStudioPhotoSearch(query) {
