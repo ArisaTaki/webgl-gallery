@@ -11,9 +11,11 @@ function assertSourcePort() {
   const checks = [
     ['empty media source constant', "const EMPTY_MEDIA_SRC = 'data:,';"],
     ['work layer starts empty', 'src="${EMPTY_MEDIA_SRC}" data-work-src='],
-    ['thumb source held in data attr', 'data-thumb-src="${photo.thumb || photo.medium || \'\'}"'],
+    ['thumb source held in data attr', 'data-thumb-src="${escapeHtml(photo.thumb || photo.medium || \'\')}"'],
     ['work layer reset source', 'img.src = EMPTY_MEDIA_SRC;'],
     ['work layer decode loader', 'function requestWorkLayerImageLoad(index, motion, delay = 100)'],
+    ['work layer preview source', 'function getWorkPreviewSrc(index)'],
+    ['progressive large upgrade', "img.dataset.quality = 'large';"],
     ['thumb background reset', "image.style.backgroundImage = 'none';"],
     ['thumb decode loader', 'function requestWorkThumbImageLoad(index, motion, delay = 0)'],
     ['reference active large delay', 'requestWorkLayerImageLoad(index, motion, WORK_ENTRY_REVEAL_DELAY);'],

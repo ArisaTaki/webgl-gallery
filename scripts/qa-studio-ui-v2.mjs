@@ -214,6 +214,36 @@ try {
   await send(client, 'Network.enable');
   await send(client, 'Network.clearBrowserCookies');
   await setViewport(client, 1920, 1080);
+  const galleryUrl = new URL('/', localUrl).href;
+  await send(client, 'Page.navigate', { url: galleryUrl });
+  await waitFor(client, `location.href === ${JSON.stringify(galleryUrl)}`, 'gallery navigation');
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index"', 'initial gallery preload', 20000);
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  const initialPreload = await evaluate(client, `(async () => {
+    const gallery = await fetch('/api/gallery').then((response) => response.json());
+    const resources = new Set(performance.getEntriesByType('resource').map((entry) => entry.name));
+    const groups = gallery.groups
+      .map((group) => {
+        const photos = gallery.photos.filter((photo) => photo.groupId === group.id || photo.group === group.slug);
+        const loadedMedium = photos.filter((photo) => photo.medium && resources.has(new URL(photo.medium, location.href).href)).length;
+        return { id: group.id, photos: photos.length, loadedMedium };
+      })
+      .filter((group) => group.photos > 0);
+    return {
+      groups,
+      loader: [...document.querySelectorAll('[data-loader-digit]')].map((digit) => digit.textContent).join(''),
+      initialTotal: Number(document.querySelector('#webgl')?.dataset.initialPreloadTotal || 0),
+      initialLoaded: Number(document.querySelector('#webgl')?.dataset.initialPreloadLoaded || 0),
+      timedOut: document.querySelector('#webgl')?.dataset.initialPreloadTimedOut === 'true',
+      backgroundTotal: Number(document.querySelector('#webgl')?.dataset.backgroundPreloadTotal || 0),
+      backgroundLoaded: Number(document.querySelector('#webgl')?.dataset.backgroundPreloadLoaded || 0),
+    };
+  })()`);
+  assert(initialPreload.loader === '100' && !initialPreload.timedOut, `Initial loader should finish real image preloads: ${JSON.stringify(initialPreload)}`);
+  assert(initialPreload.initialTotal === 6 && initialPreload.initialLoaded === 6, `Initial preload should include two previews for each fixture album: ${JSON.stringify(initialPreload)}`);
+  assert(initialPreload.groups.every((group) => group.loadedMedium >= Math.min(3, group.photos)), `Each album should have its cover and first previews ready: ${JSON.stringify(initialPreload)}`);
+  assert(initialPreload.backgroundTotal > 0 && initialPreload.backgroundLoaded > 0, `Background preload should start after the gallery opens: ${JSON.stringify(initialPreload)}`);
+
   await send(client, 'Page.navigate', { url: localUrl });
   await waitFor(client, `location.href === ${JSON.stringify(localUrl)}`, 'Studio navigation');
   await waitFor(client, 'document.readyState !== "loading"', 'document load');
@@ -402,9 +432,29 @@ try {
   assert(galleryDetail.action === 'VIEWPHOTOS' && galleryDetail.paletteMode === 'detail', `Gallery detail action and palette should be active: ${JSON.stringify(galleryDetail)}`);
   await screenshot(client, '/tmp/gallery-album-detail.png');
 
+  await send(client, 'Network.setBlockedURLs', { urls: ['*large*'] });
+  await evaluate(client, `(() => {
+    window.__workLoadStartedAt = performance.now();
+    document.querySelector('[data-action="next-photo"]').click();
+  })()`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "work"', 'work view');
+  await waitFor(client, 'document.querySelector(".work-layer.is-active .work-layer-img")?.dataset.loaded === "true"', 'progressive work preview', 1500);
+  const workPreview = await evaluate(client, `(() => {
+    const image = document.querySelector('.work-layer.is-active .work-layer-img');
+    return {
+      elapsed: performance.now() - window.__workLoadStartedAt,
+      loaded: image?.dataset.loaded,
+      quality: image?.dataset.quality,
+      hasSource: Boolean(image?.currentSrc && image.currentSrc !== 'data:,'),
+    };
+  })()`);
+  assert(workPreview.loaded === 'true' && workPreview.hasSource && workPreview.quality === 'preview' && workPreview.elapsed < 1500, `Work view should reveal a cached preview when the large image is unavailable: ${JSON.stringify(workPreview)}`);
+  await screenshot(client, '/tmp/gallery-work-preview.png');
+  await send(client, 'Network.setBlockedURLs', { urls: [] });
+
   console.log(JSON.stringify({
     ok: failures.length === 0,
-    screenshots: ['/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png'],
+    screenshots: ['/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png', '/tmp/gallery-work-preview.png'],
     desktop,
     loginLayout,
     dialog,
@@ -416,6 +466,8 @@ try {
     bulkMutation,
     mobile,
     galleryDetail,
+    initialPreload,
+    workPreview,
     checkpoints,
     failures,
   }, null, 2));

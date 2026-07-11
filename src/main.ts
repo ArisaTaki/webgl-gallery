@@ -87,6 +87,11 @@ const DETAIL_EXIT_EARLY_PLANE_EASE = 0.058;
 const HOME_PAGINATION_BASE_OPACITY = 0.2;
 const HOME_WHEEL_LINE_FACTOR = 0.75;
 const HOME_WHEEL_PIXEL_FACTOR = 0.543;
+const INITIAL_ALBUM_PRELOAD_COUNT = 2;
+const INITIAL_PRELOAD_CONCURRENCY = 3;
+const INITIAL_LOADING_MAX_MS = 8000;
+const BACKGROUND_PRELOAD_CONCURRENCY = 2;
+const ALBUM_THUMB_PRELOAD_CONCURRENCY = 4;
 
 const VIEW = {
   about: 'about',
@@ -296,7 +301,9 @@ const state = {
   pointerActive: false,
   projectSwitchStartedAt: 0,
   photos: [],
+  galleryPhotos: [],
   galleryPhotoCount: 0,
+  backgroundPreloadScheduled: false,
   ready: false,
   rotateLatency: 0,
   setupLanguage: getInitialSetupLanguage(),
@@ -356,6 +363,7 @@ const emptyTexture = new THREE.DataTexture(new Uint8Array([16, 16, 15, 255]), 1,
 emptyTexture.colorSpace = THREE.SRGBColorSpace;
 emptyTexture.needsUpdate = true;
 const workImageDecodeCache = new Map<string, LooseRecord>();
+let backgroundPreloadTimer = 0;
 
 let viewport = { width: 2, height: 2, aspect: 1 };
 let galleryEls: LooseRecord = {};
@@ -522,12 +530,15 @@ async function loadPhotos() {
     state.albumPhotos = [];
     const manifest = await fetchGalleryPayload('/api/photos');
     const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
+    state.galleryPhotos = normalizePhotos(photos);
     state.galleryPhotoCount = photos.length;
-    return normalizePhotos(photos);
+    return state.galleryPhotos;
   }
 
   const manifest = await fetchGalleryPayload('/api/gallery');
   const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
+  state.galleryPhotos = normalizePhotos(photos);
+  state.backgroundPreloadScheduled = false;
   state.galleryPhotoCount = photos.length;
   const projects = normalizeAlbumProjects(Array.isArray(manifest) ? [] : manifest.groups || [], photos);
   if (groupSlug) {
@@ -536,7 +547,7 @@ async function loadPhotos() {
     );
     if (projectExists) {
       state.currentGroupSlug = groupSlug;
-      state.albumPhotos = photosForGroup(photos, groupSlug, projects);
+      state.albumPhotos = photosForGroup(state.galleryPhotos, groupSlug, projects);
     } else {
       state.currentGroupSlug = '';
       state.albumPhotos = [];
@@ -654,7 +665,8 @@ function photosForGroup(photos, groupSlug, projects = state.photos) {
     item.groupId === groupSlug,
   );
   const groupId = project?.groupId || groupSlug;
-  const normalized = normalizePhotos(photos).filter((photo) =>
+  const normalizedPhotos = photos.every((photo) => photo?.palette) ? photos : normalizePhotos(photos);
+  const normalized = normalizedPhotos.filter((photo) =>
     photo.group === groupSlug ||
     photo.groupId === groupId ||
     (!photo.group && !photo.groupId && groupSlug === 'default'),
@@ -725,6 +737,11 @@ function getWorkImageSrc(index) {
   return photo?.large || photo?.medium || photo?.thumb || '';
 }
 
+function getWorkPreviewSrc(index) {
+  const photo = getWorkPhotos()[index];
+  return photo?.medium || photo?.thumb || photo?.large || '';
+}
+
 function getWorkVisitUrl() {
   const activePhoto = state.photos[state.activeIndex];
   const workPhoto = getWorkPhotos()[state.workIndex] || activePhoto;
@@ -743,31 +760,16 @@ function safeBrowserUrl(value) {
 }
 
 function warmWorkLayerImage(index) {
-  const src = getWorkImageSrc(index);
-  if (!src) return Promise.resolve('');
+  return preloadDecodedImage(getWorkImageSrc(index));
+}
 
-  const cached = workImageDecodeCache.get(src);
-  if (cached) return cached.promise;
-
-  const image = new Image();
-  image.crossOrigin = 'anonymous';
-  image.src = src;
-  const promise = image.decode
-    ? image.decode().catch(() => undefined).then(() => src)
-    : new Promise((resolve) => {
-        const done = () => resolve(src);
-        image.onload = done;
-        image.onerror = done;
-        if (image.complete) queueMicrotask(done);
-      });
-
-  workImageDecodeCache.set(src, { image, promise });
-  return promise;
+function warmWorkPreviewImage(index) {
+  return preloadDecodedImage(getWorkPreviewSrc(index));
 }
 
 function warmWorkMediaImages(projectIndex = state.activeIndex) {
   const [activeWorkIndex] = getWorkMediaIndices(projectIndex);
-  if (Number.isFinite(activeWorkIndex)) warmWorkLayerImage(activeWorkIndex);
+  if (Number.isFinite(activeWorkIndex)) warmWorkPreviewImage(activeWorkIndex);
 }
 
 function makePhotoSlug(photo, index) {
@@ -1340,15 +1342,80 @@ function setupPanelHtml() {
   `;
 }
 
+function initialAlbumPreloadUrls() {
+  if (state.mode !== VIEW.loading || !state.galleryPhotos.length) return [];
+  const urls: string[] = [];
+  const seen = new Set(state.photos.map((project) => project.medium || project.large || project.thumb).filter(Boolean));
+
+  state.photos.forEach((project) => {
+    if (!project?.isAlbumProject) return;
+    const groupSlug = project.group || project.slug || project.groupId;
+    const groupPhotos = photosForGroup(state.galleryPhotos, groupSlug, state.photos);
+    let added = 0;
+    for (const photo of groupPhotos) {
+      const src = photo.medium || photo.thumb || photo.large || '';
+      if (!src || seen.has(src)) continue;
+      seen.add(src);
+      urls.push(src);
+      added += 1;
+      if (added >= INITIAL_ALBUM_PRELOAD_COUNT) break;
+    }
+  });
+
+  return urls;
+}
+
+function preloadDecodedImage(src) {
+  if (!src) return Promise.resolve('');
+  const cached = workImageDecodeCache.get(src);
+  if (cached) return cached.promise;
+
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = src;
+  const promise = (image.decode
+    ? image.decode()
+    : new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error(`Image preload failed: ${src}`));
+        if (image.complete) queueMicrotask(resolve);
+      }))
+    .then(() => src)
+    .catch(() => {
+      workImageDecodeCache.delete(src);
+      return '';
+    });
+
+  workImageDecodeCache.set(src, { image, promise });
+  return promise;
+}
+
+async function preloadImageQueue(urls: string[], concurrency: number, onSettled: (src: string, index: number) => void = () => {}) {
+  const queue: string[] = [...new Set(urls.filter(Boolean))];
+  let cursor = 0;
+  async function worker() {
+    while (cursor < queue.length) {
+      const index = cursor;
+      cursor += 1;
+      await preloadDecodedImage(queue[index]);
+      onSettled(queue[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), queue.length) }, () => worker()));
+}
+
 function setupScene() {
   for (const mesh of planes) {
     scene.remove(mesh);
   }
   planes.length = 0;
+  const initialPreloadUrls = initialAlbumPreloadUrls();
   state.loaderLoaded = 0;
-  state.loaderTotal = Math.max(state.photos.length, 1);
+  state.loaderTotal = Math.max(state.photos.length + initialPreloadUrls.length, 1);
   state.loaderReady = state.photos.length === 0;
   state.loaderValue = 1;
+  canvas.dataset.initialPreloadTotal = String(initialPreloadUrls.length);
+  canvas.dataset.initialPreloadLoaded = '0';
 
   ensureBackgroundPlane();
 
@@ -1403,7 +1470,11 @@ function setupScene() {
   }
 
   updateLoaderCounter(true);
-  return Promise.allSettled(texturePromises).then(() => {
+  const albumPreloadReady = preloadImageQueue(initialPreloadUrls, INITIAL_PRELOAD_CONCURRENCY, () => {
+    canvas.dataset.initialPreloadLoaded = String(Number(canvas.dataset.initialPreloadLoaded || 0) + 1);
+    markTextureLoaded();
+  });
+  return Promise.allSettled([...texturePromises, albumPreloadReady]).then(() => {
     state.loaderReady = true;
   });
 }
@@ -1520,13 +1591,49 @@ function markTextureLoaded() {
 }
 
 function releaseInitialLoading(texturesReady) {
-  texturesReady.then(() => {
+  const maximumWait = new Promise((resolve) => window.setTimeout(() => resolve('timeout'), INITIAL_LOADING_MAX_MS));
+  Promise.race([texturesReady.then(() => 'ready'), maximumWait]).then((result) => {
+    if (result === 'timeout') canvas.dataset.initialPreloadTimedOut = 'true';
+    state.loaderLoaded = state.loaderTotal;
+    updateLoaderCounter(true);
     const elapsed = performance.now() - state.loaderStartedAt;
     const hold = Math.max(0, 500 - elapsed);
     window.setTimeout(() => {
       if (state.mode === VIEW.loading) setMode(state.initialRouteMode || VIEW.index);
+      scheduleBackgroundImagePreload();
     }, hold);
   });
+}
+
+function scheduleBackgroundImagePreload() {
+  if (state.backgroundPreloadScheduled || !state.galleryPhotos.length) return;
+  if (![VIEW.index, VIEW.detail, VIEW.work].includes(state.mode)) return;
+  if (state.currentGroupSlug) prioritizeAlbumImages(state.currentGroupSlug);
+  state.backgroundPreloadScheduled = true;
+  window.clearTimeout(backgroundPreloadTimer);
+
+  const run = () => {
+    const urls = [...new Set(state.galleryPhotos
+      .map((photo) => photo.medium || photo.thumb || photo.large || '')
+      .filter((src) => src && !workImageDecodeCache.has(src)))];
+    canvas.dataset.backgroundPreloadTotal = String(urls.length);
+    canvas.dataset.backgroundPreloadLoaded = '0';
+    void preloadImageQueue(urls, BACKGROUND_PRELOAD_CONCURRENCY, () => {
+      canvas.dataset.backgroundPreloadLoaded = String(Number(canvas.dataset.backgroundPreloadLoaded || 0) + 1);
+    });
+  };
+
+  backgroundPreloadTimer = window.setTimeout(() => {
+    const requestIdle = (window as any).requestIdleCallback;
+    if (typeof requestIdle === 'function') requestIdle(run, { timeout: 1800 });
+    else run();
+  }, 650);
+}
+
+function prioritizeAlbumImages(groupSlug) {
+  const photos = photosForGroup(state.galleryPhotos, groupSlug, state.photos);
+  const thumbs = photos.map((photo) => photo.thumb || photo.medium || '').filter(Boolean);
+  void preloadImageQueue(thumbs, ALBUM_THUMB_PRELOAD_CONCURRENCY);
 }
 
 function attachEvents() {
@@ -2567,6 +2674,7 @@ async function onAdminSetGroupCover(groupId, photoId) {
 }
 
 async function refreshPublicPhotos() {
+  window.clearTimeout(backgroundPreloadTimer);
   state.photos = await loadPhotos();
   workImageDecodeCache.clear();
   renderShell();
@@ -4176,6 +4284,7 @@ async function openAlbumProject(index = state.activeIndex) {
   if (!groupSlug) return;
   const requestId = ++state.albumRequestId;
   state.currentGroupSlug = groupSlug;
+  prioritizeAlbumImages(groupSlug);
   const albumPhotos = await loadAlbumPhotos(groupSlug);
   if (requestId !== state.albumRequestId || state.currentGroupSlug !== groupSlug) return;
   state.albumPhotos = albumPhotos;
@@ -4201,6 +4310,8 @@ function closeDetailToIndex() {
 }
 
 async function loadAlbumPhotos(groupSlug) {
+  const cachedPhotos = photosForGroup(state.galleryPhotos, groupSlug, state.photos);
+  if (cachedPhotos.length) return cachedPhotos;
   const manifest = await fetchGalleryPayload(`/api/gallery?group=${encodeURIComponent(groupSlug)}`);
   const photos = Array.isArray(manifest) ? manifest : manifest.photos || [];
   return normalizePhotos(photos);
@@ -4345,6 +4456,7 @@ function setMode(mode, options: LooseRecord = {}) {
   if (updateRoute) {
     syncRouteForMode(mode);
   }
+  if ([VIEW.index, VIEW.detail, VIEW.work].includes(mode)) scheduleBackgroundImagePreload();
 }
 
 function settleIndexSurface() {
@@ -4878,22 +4990,31 @@ function resetWorkLayerImage(index) {
   img.dataset.loadToken = String((Number(img.dataset.loadToken) || 0) + 1);
   img.src = EMPTY_MEDIA_SRC;
   img.dataset.loaded = 'false';
+  img.dataset.quality = 'empty';
 }
 
 function requestWorkLayerImageLoad(index, motion, delay = 100) {
   const img = galleryEls.workLayers?.[index]?.querySelector('.work-layer-img');
-  const src = getWorkImageSrc(index) || img?.dataset.workSrc || '';
-  if (!img || !src || motion.imageVisible || motion.loadStarted) return;
+  const finalSrc = getWorkImageSrc(index) || img?.dataset.workSrc || '';
+  const previewSrc = getWorkPreviewSrc(index) || finalSrc;
+  if (!img || !previewSrc || motion.imageVisible || motion.loadStarted) return;
 
   motion.loadStarted = true;
   motion.loadToken = (motion.loadToken || 0) + 1;
   const token = String((Number(img.dataset.loadToken) || 0) + 1);
   img.dataset.loadToken = token;
-  warmWorkLayerImage(index).then((decodedSrc) => {
+  warmWorkPreviewImage(index).then((decodedSrc) => {
     if (img.dataset.loadToken !== token) return;
-    img.src = decodedSrc || src;
+    img.src = decodedSrc || previewSrc;
     img.dataset.loaded = 'true';
+    img.dataset.quality = previewSrc === finalSrc ? 'large' : 'preview';
     motion.revealAt = performance.now() + delay;
+    if (!finalSrc || finalSrc === previewSrc) return;
+    warmWorkLayerImage(index).then((decodedLargeSrc) => {
+      if (!decodedLargeSrc || img.dataset.loadToken !== token) return;
+      img.src = decodedLargeSrc;
+      img.dataset.quality = 'large';
+    });
   });
 }
 
