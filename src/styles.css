@@ -1108,12 +1108,12 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 }
 
 .project-shadow-title .title-line.is-wide-script {
-  height: 0.95em;
+  height: 1.08em;
   margin-left: 0;
   font-family: var(--font-sans);
   font-size: 132px;
   font-weight: 800;
-  line-height: 0.9;
+  line-height: 1.05;
   letter-spacing: 0;
 }
 

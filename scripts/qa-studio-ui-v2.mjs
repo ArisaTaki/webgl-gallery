@@ -244,6 +244,83 @@ try {
   assert(initialPreload.groups.every((group) => group.loadedMedium >= Math.min(3, group.photos)), `Each album should have its cover and first previews ready: ${JSON.stringify(initialPreload)}`);
   assert(initialPreload.backgroundTotal > 0 && initialPreload.backgroundLoaded > 0, `Background preload should start after the gallery opens: ${JSON.stringify(initialPreload)}`);
 
+  const publicBrand = await evaluate(client, `({
+    about: [...document.querySelectorAll('.about-hero span')].map((item) => item.textContent.trim()).join(' '),
+    title: document.title,
+    wordmark: document.querySelector('.wordmark')?.textContent.replace(/\\s+/g, ' ').trim(),
+  })`);
+  assert(publicBrand.about === 'IROP IMAGES' && publicBrand.title === 'Irop Images' && publicBrand.wordmark === 'irop images', `Public branding should consistently use Irop Images: ${JSON.stringify(publicBrand)}`);
+
+  await evaluate(client, `document.querySelector('[data-action="about"]').click()`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "about"', 'Irop Images about page');
+  await new Promise((resolve) => setTimeout(resolve, 1050));
+  const aboutLayout = await evaluate(client, `(() => {
+    const hero = document.querySelector('.about-hero').getBoundingClientRect();
+    return {
+      bottom: hero.bottom,
+      height: hero.height,
+      left: hero.left,
+      right: hero.right,
+      text: [...document.querySelectorAll('.about-hero span')].map((item) => item.textContent.trim()).join(' '),
+      viewport: [innerWidth, innerHeight],
+    };
+  })()`);
+  assert(aboutLayout.text === 'IROP IMAGES' && aboutLayout.left >= 0 && aboutLayout.right <= aboutLayout.viewport[0] && aboutLayout.bottom <= aboutLayout.viewport[1], `Irop Images About hero should fit the viewport: ${JSON.stringify(aboutLayout)}`);
+  await screenshot(client, '/tmp/gallery-about-irop-images.png');
+  await evaluate(client, `document.querySelector('[data-action="close-about"]').click()`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index"', 'gallery return after About check');
+
+  await evaluate(client, `(() => {
+    window.__albumTitleAnimations = [];
+    window.__projectSwitchSeen = false;
+    document.addEventListener('animationstart', (event) => {
+      if (event.target instanceof Element && event.target.matches('.project-shadow-title-active .title-char span')) {
+        window.__albumTitleAnimations.push({ name: event.animationName, at: performance.now() });
+      }
+    });
+    new MutationObserver(() => {
+      if (document.querySelector('.gallery-shell')?.classList.contains('is-project-switching')) {
+        window.__projectSwitchSeen = true;
+      }
+    }).observe(document.querySelector('#app'), { attributes: true, childList: true, subtree: true, attributeFilter: ['class'] });
+  })()`);
+  await send(client, 'Input.dispatchMouseEvent', {
+    button: 'none',
+    clickCount: 0,
+    type: 'mouseMoved',
+    x: 1080,
+    y: 540,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 220));
+  await send(client, 'Input.dispatchKeyEvent', { code: 'Enter', key: 'Enter', type: 'keyDown', windowsVirtualKeyCode: 13 });
+  await send(client, 'Input.dispatchKeyEvent', { code: 'Enter', key: 'Enter', type: 'keyUp', windowsVirtualKeyCode: 13 });
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "detail"', 'hovered album detail');
+  await new Promise((resolve) => setTimeout(resolve, 1850));
+  const albumTitleEntry = await evaluate(client, `(() => {
+    const shell = document.querySelector('.gallery-shell');
+    const line = document.querySelector('.project-shadow-title-active .title-line.is-wide-script:first-child');
+    const lineRect = line?.getBoundingClientRect();
+    const lineStyle = line ? getComputedStyle(line) : null;
+    const spans = line ? [...line.querySelectorAll('.title-char span')].map((span) => span.getBoundingClientRect()) : [];
+    const animations = window.__albumTitleAnimations || [];
+    return {
+      animations,
+      lineHeight: Number.parseFloat(lineStyle?.lineHeight || '0'),
+      fontSize: Number.parseFloat(lineStyle?.fontSize || '0'),
+      maskHeight: lineRect?.height || 0,
+      mode: shell?.dataset.mode || '',
+      projectSwitchSeen: Boolean(window.__projectSwitchSeen),
+      switchAnimations: animations.filter((item) => item.name === 'title-char-switch').length,
+      topOverflow: spans.length && lineRect ? Math.max(...spans.map((rect) => lineRect.top - rect.top), 0) : 0,
+      bottomOverflow: spans.length && lineRect ? Math.max(...spans.map((rect) => rect.bottom - lineRect.bottom), 0) : 0,
+    };
+  })()`);
+  assert(albumTitleEntry.mode === 'detail' && !albumTitleEntry.projectSwitchSeen && albumTitleEntry.switchAnimations === 0, `Opening a hovered album should run one clean title entry without a delayed project switch: ${JSON.stringify(albumTitleEntry)}`);
+  assert(albumTitleEntry.lineHeight > albumTitleEntry.fontSize && albumTitleEntry.maskHeight >= albumTitleEntry.lineHeight && albumTitleEntry.topOverflow <= 0.5 && albumTitleEntry.bottomOverflow <= 0.5, `Wide album title mask should leave glyph headroom without clipping: ${JSON.stringify(albumTitleEntry)}`);
+  await screenshot(client, '/tmp/gallery-album-title-entry.png');
+  await evaluate(client, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index"', 'gallery return after title check');
+
   await send(client, 'Page.navigate', { url: localUrl });
   await waitFor(client, `location.href === ${JSON.stringify(localUrl)}`, 'Studio navigation');
   await waitFor(client, 'document.readyState !== "loading"', 'document load');
@@ -454,7 +531,9 @@ try {
 
   console.log(JSON.stringify({
     ok: failures.length === 0,
-    screenshots: ['/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png', '/tmp/gallery-work-preview.png'],
+    screenshots: ['/tmp/gallery-about-irop-images.png', '/tmp/gallery-album-title-entry.png', '/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png', '/tmp/gallery-work-preview.png'],
+    albumTitleEntry,
+    aboutLayout,
     desktop,
     loginLayout,
     dialog,
@@ -467,6 +546,7 @@ try {
     mobile,
     galleryDetail,
     initialPreload,
+    publicBrand,
     workPreview,
     checkpoints,
     failures,

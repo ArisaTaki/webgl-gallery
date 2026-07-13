@@ -15,6 +15,8 @@ function assertSourcePort() {
     ['title settled class', 'is-title-mode-settled'],
     ['detail work title pulse', 'previousMode === VIEW.detail && mode === VIEW.work'],
     ['work detail title pulse', 'previousMode === VIEW.work && mode === VIEW.detail'],
+    ['project switch restricted to detail and work', 'state.mode === VIEW.detail || state.mode === VIEW.work'],
+    ['wide title glyph headroom', 'height: 1.08em'],
     ['css mode moving', '.gallery-shell.is-title-mode-moving:not(.is-project-switching) .project-shadow-title .title-char span'],
   ];
   const missing = checks.filter(([, needle]) => !(main.includes(needle) || css.includes(needle)));

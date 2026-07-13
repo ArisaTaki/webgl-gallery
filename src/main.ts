@@ -822,7 +822,7 @@ function renderShell() {
       <section class="empty-gallery" aria-label="Gallery is ready for its first album">
         <div class="empty-gallery-mark" aria-hidden="true">
           <span>IROP</span>
-          <span>GALLERY</span>
+          <span>IMAGES</span>
         </div>
         <div class="empty-gallery-copy">
           <p>ARCHIVE READY</p>
@@ -837,10 +837,10 @@ function renderShell() {
     <section class="gallery-shell is-${state.mode}${total ? '' : ' is-empty'}" data-mode="${state.mode}">
       <section class="mobile-fallback" aria-label="移动端提示">
         <header class="mobile-fallback-top">
-          <strong>IROP GALLERY</strong>
+          <strong>IROP IMAGES</strong>
           <span>SELF-HOSTED PHOTO ARCHIVE<br />AVAILABLE LOCAL ↗</span>
         </header>
-        <h1>WEBGL<br />GALLERY</h1>
+        <h1>IROP<br />IMAGES</h1>
         <p class="mobile-fallback-note">(VISIT ON A DESKTOP FOR A FULL GALLERY)</p>
         <p class="mobile-fallback-copy">
           A SELF-HOSTED PHOTO ARCHIVE WITH WEBGL MOTION, PROJECT TRANSITIONS
@@ -859,9 +859,9 @@ function renderShell() {
       </div>
 
       <header class="corner corner-left">
-        <a class="wordmark" href="/" aria-label="irop gallery">
+        <a class="wordmark" href="/" aria-label="Irop Images">
           <span>irop</span>
-          <span>gallery</span>
+          <span>images</span>
         </a>
       </header>
 
@@ -981,10 +981,10 @@ function renderShell() {
 
       ${emptyState}
 
-      <section class="about-panel" aria-label="About WebGL Gallery" aria-hidden="${state.mode !== VIEW.about}">
+      <section class="about-panel" aria-label="About Irop Images" aria-hidden="${state.mode !== VIEW.about}">
         <div class="about-hero" aria-hidden="true">
-          <span>WEBGL</span>
-          <span>GALLERY</span>
+          <span>IROP</span>
+          <span>IMAGES</span>
         </div>
         <p class="about-copy">
           A SELF-HOSTED WEBGL PHOTO GALLERY FOR ORGANIZING ALBUMS AND KEEPING IMAGES VISIBLE.
@@ -1015,7 +1015,7 @@ function renderShell() {
             <span><i>03</i><strong>LARGE WEBP</strong></span>
           </div>
         </div>
-        <p class="about-rights">SELF-HOSTED PHOTO ARCHIVE<br />WEBGL GALLERY 2026</p>
+        <p class="about-rights">SELF-HOSTED PHOTO ARCHIVE<br />IROP IMAGES 2026</p>
       </section>
 
       ${setupPanelHtml()}
@@ -1046,7 +1046,7 @@ function renderShell() {
               <div class="studio-brand">
                 <span class="studio-brand-mark"><i data-lucide="image"></i></span>
                 <div>
-                  <p class="kicker">WebGL Gallery</p>
+                  <p class="kicker">Irop Images</p>
                   <h2>Studio</h2>
                 </div>
               </div>
@@ -1194,7 +1194,7 @@ function setupPanelHtml() {
         <form class="setup-login-form">
           <header class="setup-head">
             <div>
-              <p class="setup-brand">irop gallery</p>
+              <p class="setup-brand">irop images</p>
               <p class="kicker">${escapeHtml(setupT('setup'))}</p>
               <h2>${escapeHtml(setupT('setupLocked'))}</h2>
             </div>
@@ -1234,7 +1234,7 @@ function setupPanelHtml() {
       <form class="setup-form">
         <header class="setup-head">
           <div>
-            <p class="setup-brand">irop gallery</p>
+            <p class="setup-brand">irop images</p>
             <p class="kicker">${escapeHtml(setupT('firstRun'))}</p>
             <h2>${escapeHtml(setupT('setupTitle'))}</h2>
           </div>
@@ -4250,7 +4250,12 @@ function setActive(index, snap = false) {
     if (state.mode === VIEW.detail) {
       state.projectSwitchStartedAt = performance.now();
     }
-    pulseProjectSwitch();
+    if (state.mode === VIEW.detail || state.mode === VIEW.work) {
+      pulseProjectSwitch();
+    } else {
+      state.exitingProjectIndex = -1;
+      state.projectSwitchStartedAt = 0;
+    }
     if (state.mode !== VIEW.work) state.workIndex = nextIndex;
   }
   state.hoverIndex = -1;
