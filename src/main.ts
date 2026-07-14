@@ -1668,8 +1668,13 @@ function attachEvents() {
     const thumb = event.target.closest('[data-index]');
 
     const createDialog = event.target.closest('[data-studio-create-dialog]');
+    const uploadDialog = event.target.closest('[data-studio-upload-dialog]');
     if (createDialog && event.target === createDialog) {
       closeStudioCreateDialog();
+      return;
+    }
+    if (uploadDialog && event.target === uploadDialog) {
+      closeStudioUploadDialog();
       return;
     }
     if (groupFilter) {
@@ -1781,6 +1786,9 @@ function attachEvents() {
     }
     if (name === 'studio-close-create') {
       closeStudioCreateDialog();
+    }
+    if (name === 'studio-close-upload') {
+      closeStudioUploadDialog();
     }
     if (name === 'studio-toggle-upload') {
       state.studioUploadOpen = !state.studioUploadOpen;
@@ -2166,14 +2174,12 @@ function onKeyDown(event) {
     if (key === 'Escape') {
       event.preventDefault();
       if (state.studioCreateGroupOpen) closeStudioCreateDialog();
+      else if (state.studioUploadOpen) closeStudioUploadDialog();
       else if (state.studioSelectedPhotoIds.length) {
         state.studioSelectedPhotoIds = [];
         renderStudioAdmin();
       } else if (state.studioSelectedPhotoId) {
         state.studioSelectedPhotoId = '';
-        renderStudioAdmin();
-      } else if (state.studioUploadOpen) {
-        state.studioUploadOpen = false;
         renderStudioAdmin();
       } else setMode(VIEW.index);
       return;
@@ -2580,6 +2586,11 @@ function closeStudioCreateDialog() {
   renderStudioAdmin();
 }
 
+function closeStudioUploadDialog() {
+  state.studioUploadOpen = false;
+  renderStudioAdmin();
+}
+
 function toggleStudioPhotoSelection(id) {
   if (!id) return;
   const selected = new Set(state.studioSelectedPhotoIds);
@@ -2968,6 +2979,56 @@ function renderStudioAdmin() {
       </form>
     </dialog>
   ` : '';
+  const uploadDialog = state.studioUploadOpen ? `
+    <dialog class="studio-upload-dialog" data-studio-upload-dialog aria-labelledby="studio-upload-title">
+      <div class="studio-dialog-head">
+        <div>
+          <span class="studio-eyebrow">导入</span>
+          <h3 id="studio-upload-title">上传照片</h3>
+        </div>
+        <button class="studio-icon-button" type="button" data-action="studio-close-upload" aria-label="关闭上传" title="关闭"><i data-lucide="x"></i></button>
+      </div>
+      <form class="studio-upload-form">
+        <label class="studio-dropzone">
+          <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required ${groups.length ? '' : 'disabled'} />
+          <i data-lucide="upload-cloud"></i>
+          <strong>选择照片</strong>
+          <em class="studio-file-count" data-studio-file-count>未选择文件</em>
+        </label>
+        <div class="studio-upload-fields">
+          <label class="studio-field studio-upload-target">
+            <span>目标相册</span>
+            <select name="groupId" required ${groups.length ? '' : 'disabled'}>${groupOptions}</select>
+          </label>
+          <label class="studio-field">
+            <span>批量标题</span>
+            <input name="titlePrefix" value="Gallery" />
+          </label>
+          <label class="studio-field">
+            <span>拍摄日期</span>
+            <input name="capturedAt" type="date" />
+          </label>
+          <details class="studio-upload-more">
+            <summary><i data-lucide="more-horizontal"></i><span>更多信息</span></summary>
+            <div>
+              <label class="studio-field">
+                <span>单张标题</span>
+                <input name="title" />
+              </label>
+              <label class="studio-field">
+                <span>图片介绍</span>
+                <textarea name="description" rows="3"></textarea>
+              </label>
+            </div>
+          </details>
+        </div>
+        <footer class="studio-upload-actions">
+          <button type="button" data-action="studio-close-upload">取消</button>
+          <button type="submit" ${groups.length ? '' : 'disabled'}><i data-lucide="upload-cloud"></i><span>开始上传</span></button>
+        </footer>
+      </form>
+    </dialog>
+  ` : '';
 
   galleryEls.studioAdminBody.innerHTML = `
     <div class="studio-dashboard">
@@ -3011,7 +3072,7 @@ function renderStudioAdmin() {
               <button type="button" data-action="studio-clear-search" aria-label="清除搜索" title="清除搜索" ${state.studioSearch ? '' : 'hidden'}><i data-lucide="x"></i></button>
             </label>
             <button class="studio-primary-action" type="button" data-action="studio-toggle-upload">
-              <i data-lucide="upload-cloud"></i><span>${state.studioUploadOpen ? '收起上传' : '上传照片'}</span>
+              <i data-lucide="upload-cloud"></i><span>上传照片</span>
             </button>
           </div>
         </section>
@@ -3034,51 +3095,6 @@ function renderStudioAdmin() {
             <button class="studio-danger-button" type="button" data-action="studio-bulk-delete"><i data-lucide="trash-2"></i><span>删除</span></button>
             <button class="studio-icon-button" type="button" data-action="studio-clear-batch" aria-label="取消选择" title="取消选择"><i data-lucide="x"></i></button>
           </div>
-        </section>
-
-        <section class="studio-upload-panel" ${state.studioUploadOpen ? '' : 'hidden'}>
-          <header>
-            <div><span class="studio-eyebrow">导入</span><h3>上传照片</h3></div>
-            <button class="studio-icon-button" type="button" data-action="studio-toggle-upload" aria-label="关闭上传" title="关闭"><i data-lucide="x"></i></button>
-          </header>
-          <form class="studio-upload-form">
-            <label class="studio-dropzone">
-              <input name="photos" type="file" accept="image/*,.bmp,.webp,.heic" multiple required ${groups.length ? '' : 'disabled'} />
-              <i data-lucide="upload-cloud"></i>
-              <strong>选择照片</strong>
-              <em class="studio-file-count" data-studio-file-count>未选择文件</em>
-            </label>
-            <div class="studio-upload-fields">
-              <label class="studio-field">
-                <span>目标相册</span>
-                <select name="groupId" required ${groups.length ? '' : 'disabled'}>${groupOptions}</select>
-              </label>
-              <label class="studio-field">
-                <span>批量标题</span>
-                <input name="titlePrefix" value="Gallery" />
-              </label>
-              <label class="studio-field">
-                <span>拍摄日期</span>
-                <input name="capturedAt" type="date" />
-              </label>
-              <details class="studio-upload-more">
-                <summary><i data-lucide="more-horizontal"></i><span>更多信息</span></summary>
-                <div>
-                  <label class="studio-field">
-                    <span>单张标题</span>
-                    <input name="title" />
-                  </label>
-                  <label class="studio-field">
-                    <span>图片介绍</span>
-                    <textarea name="description" rows="2"></textarea>
-                  </label>
-                </div>
-              </details>
-            </div>
-            <footer class="studio-upload-actions">
-              <button type="submit" ${groups.length ? '' : 'disabled'}><i data-lucide="upload-cloud"></i><span>开始上传</span></button>
-            </footer>
-          </form>
         </section>
 
         <section class="studio-photo-section">
@@ -3132,6 +3148,7 @@ function renderStudioAdmin() {
       </aside>
     </div>
     ${createGroupDialog}
+    ${uploadDialog}
   `;
   hydrateStudioIcons();
   applyStudioPhotoSearch(state.studioSearch);
@@ -3154,10 +3171,12 @@ function syncStudioAdminUi() {
   if (photoGrid) photoGrid.scrollTop = state.studioPhotoScrollTop;
   if (sidebar) sidebar.scrollTop = state.studioSidebarScrollTop;
   if (inspector) inspector.scrollTop = state.studioInspectorScrollTop;
-  const dialog = app.querySelector('[data-studio-create-dialog]') as HTMLDialogElement | null;
-  if (!dialog || dialog.open) return;
-  if (typeof dialog.showModal === 'function') dialog.showModal();
-  else dialog.setAttribute('open', '');
+  const dialogs = [...app.querySelectorAll('[data-studio-create-dialog], [data-studio-upload-dialog]')] as HTMLDialogElement[];
+  dialogs.forEach((dialog) => {
+    if (dialog.open) return;
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  });
 }
 
 function applyStudioPhotoSearch(query) {

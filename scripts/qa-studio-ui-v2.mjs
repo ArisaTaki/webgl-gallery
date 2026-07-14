@@ -465,7 +465,20 @@ try {
   await evaluate(client, `document.querySelector('[data-action="studio-density-compact"]').click()`);
   await waitFor(client, 'document.querySelector(".studio-photo-grid")?.classList.contains("is-compact")', 'compact grid');
   await evaluate(client, `document.querySelector('[data-action="studio-toggle-upload"]').click()`);
-  await waitFor(client, '!document.querySelector(".studio-upload-panel")?.hidden', 'upload panel');
+  await waitFor(client, 'document.querySelector("[data-studio-upload-dialog]")?.open', 'upload dialog');
+  const uploadDialog = await evaluate(client, `(() => {
+    const dialog = document.querySelector('[data-studio-upload-dialog]');
+    const form = dialog.querySelector('.studio-upload-form');
+    const rect = dialog.getBoundingClientRect();
+    return {
+      open: dialog.open,
+      columns: getComputedStyle(form).gridTemplateColumns.split(' ').filter(Boolean).length,
+      controls: dialog.querySelectorAll('input, select, textarea').length,
+      fitsViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight,
+    };
+  })()`);
+  assert(uploadDialog.open && uploadDialog.columns === 2 && uploadDialog.controls >= 6 && uploadDialog.fitsViewport, `Desktop upload dialog should be complete and fit the viewport: ${JSON.stringify(uploadDialog)}`);
+  await screenshot(client, '/tmp/studio-upload-dialog-desktop.png');
   checkpoints.push(await evaluate(client, `({ step: 'upload', href: location.href, mode: document.querySelector('.gallery-shell')?.dataset.mode })`));
   assert(checkpoints.every((item) => item.mode === 'studio' && new URL(item.href).pathname === '/studio'), `Studio navigation changed unexpectedly: ${JSON.stringify(checkpoints)}`);
 
@@ -475,18 +488,25 @@ try {
     const header = document.querySelector('.studio-admin-head').getBoundingClientRect();
     const brand = document.querySelector('.studio-brand').getBoundingClientRect();
     const actions = document.querySelector('.studio-admin-actions').getBoundingClientRect();
+    const upload = document.querySelector('[data-studio-upload-dialog]').getBoundingClientRect();
+    const uploadForm = document.querySelector('[data-studio-upload-dialog] .studio-upload-form');
     const tiles = [...document.querySelectorAll('.studio-photo-tile')].filter((tile) => !tile.hidden);
     return {
       bodyOverflow: document.documentElement.scrollWidth - innerWidth,
       headerOverlap: Math.max(0, brand.right - actions.left),
       tileColumns: new Set(tiles.slice(0, 4).map((tile) => Math.round(tile.getBoundingClientRect().left))).size,
+      uploadColumns: getComputedStyle(uploadForm).gridTemplateColumns.split(' ').filter(Boolean).length,
+      uploadFitsViewport: upload.left >= 0 && upload.top >= 0 && upload.right <= innerWidth && upload.bottom <= innerHeight,
       viewport: [innerWidth, innerHeight],
     };
   })()`);
   assert(mobile.bodyOverflow <= 1, `Mobile Studio overflows horizontally: ${JSON.stringify(mobile)}`);
   assert(mobile.headerOverlap <= 1, `Mobile Studio header overlaps: ${JSON.stringify(mobile)}`);
   assert(mobile.tileColumns <= 2, `Mobile photo grid should use at most 2 columns: ${JSON.stringify(mobile)}`);
+  assert(mobile.uploadColumns === 1 && mobile.uploadFitsViewport, `Mobile upload dialog should use one column and fit the viewport: ${JSON.stringify(mobile)}`);
   await screenshot(client, '/tmp/studio-ui-v2-mobile.png');
+  await evaluate(client, `document.querySelector('[data-action="studio-close-upload"]').click()`);
+  await waitFor(client, '!document.querySelector("[data-studio-upload-dialog]")', 'closed upload dialog');
 
   await setViewport(client, 1920, 1080);
   await evaluate(client, `document.querySelector('[data-action="close-studio"]').click()`);
@@ -531,12 +551,13 @@ try {
 
   console.log(JSON.stringify({
     ok: failures.length === 0,
-    screenshots: ['/tmp/gallery-about-irop-images.png', '/tmp/gallery-album-title-entry.png', '/tmp/studio-ui-v3-dialog.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png', '/tmp/gallery-work-preview.png'],
+    screenshots: ['/tmp/gallery-about-irop-images.png', '/tmp/gallery-album-title-entry.png', '/tmp/studio-ui-v3-dialog.png', '/tmp/studio-upload-dialog-desktop.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png', '/tmp/gallery-work-preview.png'],
     albumTitleEntry,
     aboutLayout,
     desktop,
     loginLayout,
     dialog,
+    uploadDialog,
     wheel,
     selection,
     inspectorScroll,

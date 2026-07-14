@@ -2137,16 +2137,17 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
 
 .about-hero {
   position: absolute;
-  top: 45px;
-  left: 48px;
+  top: 54px;
+  left: 50px;
   display: grid;
+  row-gap: 10px;
   font-family: var(--font-condensed);
-  font-size: clamp(170px, 27vh, 250px);
+  font-size: clamp(154px, 24vh, 220px);
   font-weight: 400;
-  letter-spacing: -0.05em;
-  line-height: 0.72;
+  letter-spacing: 0;
+  line-height: 0.8;
   text-transform: uppercase;
-  transform: scaleX(0.72);
+  transform: scaleX(0.88);
   transform-origin: left top;
   user-select: none;
 }
@@ -4477,7 +4478,8 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   min-width: 0;
 }
 
-.studio-create-dialog {
+.studio-create-dialog,
+.studio-upload-dialog {
   width: min(520px, calc(100vw - 28px));
   max-height: min(720px, calc(100vh - 28px));
   overflow: hidden auto;
@@ -4489,9 +4491,47 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   box-shadow: 0 30px 100px rgba(0, 0, 0, 0.62);
 }
 
-.studio-create-dialog::backdrop {
+.studio-upload-dialog {
+  width: min(780px, calc(100vw - 28px));
+  max-height: min(760px, calc(100vh - 28px));
+}
+
+.studio-create-dialog::backdrop,
+.studio-upload-dialog::backdrop {
   background: rgba(5, 7, 6, 0.74);
   backdrop-filter: blur(5px);
+}
+
+.studio-upload-dialog .studio-upload-form {
+  grid-template-columns: minmax(220px, 0.42fr) minmax(0, 1fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+.studio-upload-dialog .studio-dropzone {
+  min-height: 248px;
+  align-self: stretch;
+}
+
+.studio-upload-dialog .studio-upload-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.studio-upload-dialog .studio-upload-target {
+  grid-column: 1 / -1;
+}
+
+.studio-upload-dialog .studio-upload-more > div {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.studio-upload-dialog .studio-upload-actions {
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--studio-line);
 }
 
 .studio-dialog-head {
@@ -4645,6 +4685,14 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
     grid-template-columns: 1fr;
   }
 
+  .studio-upload-dialog .studio-upload-form {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-upload-dialog .studio-dropzone {
+    min-height: 172px;
+  }
+
   .studio-batch-bar {
     align-items: stretch;
     flex-direction: column;
@@ -4721,6 +4769,11 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   .studio-upload-fields,
   .studio-upload-more > div,
   .studio-inline-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-upload-dialog .studio-upload-fields,
+  .studio-upload-dialog .studio-upload-more > div {
     grid-template-columns: 1fr;
   }
 
@@ -5059,8 +5112,10 @@ body[data-gallery-empty="true"][data-gallery-mode="index"] .empty-direct-actions
   .about-hero {
     top: 86px;
     left: 22px;
-    font-size: clamp(118px, 34vw, 148px);
-    line-height: 0.74;
+    row-gap: 7px;
+    font-size: clamp(106px, 30vw, 136px);
+    line-height: 0.82;
+    transform: scaleX(0.84);
   }
 
   .about-copy {

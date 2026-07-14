@@ -16,7 +16,7 @@ async function staticChecks() {
     ['secret key buffer', main.includes('state.keyBuffer =') && main.includes("endsWith('webgl')")],
     ['studio admin login', main.includes("fetch('/api/admin/login'")],
     ['studio dashboard layout', main.includes('studio-dashboard') && main.includes('data-studio-group-filter')],
-    ['studio upload panel', main.includes('studio-upload-panel') && main.includes('studio-inspector')],
+    ['studio upload dialog', main.includes('data-studio-upload-dialog') && main.includes('studio-inspector')],
     ['single photo inspector', main.includes('studioSelectedPhotoId') && main.includes('data-studio-photo-select')],
     ['photo search', main.includes('data-studio-search') && main.includes('applyStudioPhotoSearch')],
     ['collapsible creation flow', main.includes('studio-toggle-create') && main.includes('studioCreateGroupOpen')],
