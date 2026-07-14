@@ -3001,7 +3001,7 @@ function renderStudioAdmin() {
             <select name="groupId" required ${groups.length ? '' : 'disabled'}>${groupOptions}</select>
           </label>
           <label class="studio-field">
-            <span>批量标题</span>
+            <span>标题前缀</span>
             <input name="titlePrefix" value="Gallery" />
           </label>
           <label class="studio-field">
@@ -4386,7 +4386,11 @@ function setMode(mode, options: LooseRecord = {}) {
   if (previousMode === VIEW.work && (mode === VIEW.detail || mode === VIEW.index)) {
     adoptWorkIndexAsActive();
   }
-  const exitingOverlayToIndex = mode === VIEW.index && (previousMode === VIEW.setup || previousMode === VIEW.studio);
+  const exitingOverlayToIndex = mode === VIEW.index && (
+    previousMode === VIEW.setup ||
+    previousMode === VIEW.studio ||
+    previousMode === VIEW.about
+  );
   const shouldSettleIndex = mode === VIEW.index && (
     exitingOverlayToIndex ||
     previousMode === VIEW.work
@@ -4500,8 +4504,13 @@ function settleIndexSurface() {
 }
 
 function closeAbout() {
-  const returnMode = state.aboutReturnMode || VIEW.index;
-  setMode(returnMode === VIEW.about ? VIEW.index : returnMode);
+  state.aboutReturnMode = VIEW.index;
+  if (state.currentGroupSlug || routeGroupSlug()) {
+    state.albumRequestId += 1;
+    state.currentGroupSlug = '';
+    state.albumPhotos = [];
+  }
+  setMode(VIEW.index);
 }
 
 function getStep() {

@@ -318,8 +318,17 @@ try {
   assert(albumTitleEntry.mode === 'detail' && !albumTitleEntry.projectSwitchSeen && albumTitleEntry.switchAnimations === 0, `Opening a hovered album should run one clean title entry without a delayed project switch: ${JSON.stringify(albumTitleEntry)}`);
   assert(albumTitleEntry.lineHeight > albumTitleEntry.fontSize && albumTitleEntry.maskHeight >= albumTitleEntry.lineHeight && albumTitleEntry.topOverflow <= 0.5 && albumTitleEntry.bottomOverflow <= 0.5, `Wide album title mask should leave glyph headroom without clipping: ${JSON.stringify(albumTitleEntry)}`);
   await screenshot(client, '/tmp/gallery-album-title-entry.png');
-  await evaluate(client, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index"', 'gallery return after title check');
+  await evaluate(client, `document.querySelector('[data-action="about"]').click()`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "about" && location.pathname === "/about"', 'About from album detail');
+  await evaluate(client, `document.querySelector('[data-action="about"]').click()`);
+  await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index" && location.pathname === "/"', 'top-right About close returns home');
+  const aboutClose = await evaluate(client, `({
+    mode: document.querySelector('.gallery-shell')?.dataset.mode,
+    path: location.pathname,
+    detailMix: Number(document.querySelector('#webgl')?.dataset.activePlaneDetailMix || 0),
+    workMix: Number(document.querySelector('#webgl')?.dataset.activePlaneWorkMix || 0),
+  })`);
+  assert(aboutClose.mode === 'index' && aboutClose.path === '/' && aboutClose.detailMix === 0 && aboutClose.workMix === 0, `Closing About from an album should return to a settled home view: ${JSON.stringify(aboutClose)}`);
 
   await send(client, 'Page.navigate', { url: localUrl });
   await waitFor(client, `location.href === ${JSON.stringify(localUrl)}`, 'Studio navigation');
@@ -553,6 +562,7 @@ try {
     ok: failures.length === 0,
     screenshots: ['/tmp/gallery-about-irop-images.png', '/tmp/gallery-album-title-entry.png', '/tmp/studio-ui-v3-dialog.png', '/tmp/studio-upload-dialog-desktop.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png', '/tmp/gallery-work-preview.png'],
     albumTitleEntry,
+    aboutClose,
     aboutLayout,
     desktop,
     loginLayout,

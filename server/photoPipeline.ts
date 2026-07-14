@@ -226,12 +226,20 @@ export async function addUploadedPhotos({
 }) {
   const current = await loadManifest(manifestPath);
   const nextPhotos = [...current.photos];
+  const normalizedTitlePrefix = String(titlePrefix || 'Gallery').trim() || 'Gallery';
+  const titleMarker = `${normalizedTitlePrefix} `;
+  const startingTitleNumber = nextPhotos.reduce((current, photo) => {
+    if (photo.group !== 'upload' || !String(photo.title || '').startsWith(titleMarker)) return current;
+    const suffix = String(photo.title).slice(titleMarker.length);
+    if (!/^\d+$/.test(suffix)) return current;
+    return Math.max(current, Number(suffix));
+  }, 0) + 1;
 
   for (const [index, file] of files.entries()) {
     const stem = path.basename(file.originalname, path.extname(file.originalname));
     const safeStem = stem.replace(/[^a-z0-9_-]/gi, '-').toLowerCase() || 'photo';
     const id = `upload-${Date.now()}-${index}-${safeStem}`;
-    const title = `${titlePrefix} ${String(nextPhotos.length + 1).padStart(3, '0')}`;
+    const title = `${normalizedTitlePrefix} ${String(startingTitleNumber + index).padStart(3, '0')}`;
     try {
       const processed = await processImage({
         inputPath: file.path,

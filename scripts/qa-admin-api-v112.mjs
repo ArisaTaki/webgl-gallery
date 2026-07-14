@@ -126,6 +126,28 @@ try {
     method: 'POST',
   });
   const photo = upload.addedPhotos[0];
+  const archiveGroup = await adminJson(cookie, '/api/admin/groups', {
+    body: JSON.stringify({ title: 'Archive', slug: 'archive', accentColor: '#778899' }),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+  const archiveForm = new FormData();
+  archiveForm.append('groupId', archiveGroup.group.id);
+  archiveForm.append('titlePrefix', 'Archive');
+  archiveForm.append('photos', new Blob([await readFile(inputPath)], { type: 'image/png' }), 'archive sample.png');
+  const archiveUpload = await adminJson(cookie, '/api/admin/photos', {
+    body: archiveForm,
+    method: 'POST',
+  });
+  const continuedForm = new FormData();
+  continuedForm.append('groupId', groupId);
+  continuedForm.append('titlePrefix', 'Morning Light');
+  continuedForm.append('photos', new Blob([await readFile(inputPath)], { type: 'image/png' }), 'continued sample.png');
+  const continuedUpload = await adminJson(cookie, '/api/admin/photos', {
+    body: continuedForm,
+    method: 'POST',
+  });
+  await adminJson(cookie, `/api/admin/photos/${continuedUpload.addedPhotos[0].id}`, { method: 'DELETE' });
   const patch = await adminJson(cookie, `/api/admin/photos/${photo.id}`, {
     body: JSON.stringify({ title: 'Morning Light Edited', description: 'Edited copy', sortOrder: 7, visitUrl: 'javascript:alert(1)' }),
     headers: { 'Content-Type': 'application/json' },
@@ -139,6 +161,8 @@ try {
   for (const uploadedPhoto of upload.addedPhotos) {
     deleted.push(await adminJson(cookie, `/api/admin/photos/${uploadedPhoto.id}`, { method: 'DELETE' }));
   }
+  await adminJson(cookie, `/api/admin/photos/${archiveUpload.addedPhotos[0].id}`, { method: 'DELETE' });
+  const deleteArchiveGroup = await adminJson(cookie, `/api/admin/groups/${archiveGroup.group.id}`, { method: 'DELETE' });
   const deleteGroup = await adminJson(cookie, `/api/admin/groups/${groupId}`, { method: 'DELETE' });
 
   const failures = [];
@@ -159,6 +183,12 @@ try {
   if (upload.addedPhotos?.map((item) => item.title).join('|') !== 'Morning Light 001|Morning Light 002') {
     failures.push(`Expected continuous batch numbering, got ${JSON.stringify(upload.addedPhotos?.map((item) => item.title))}.`);
   }
+  if (archiveUpload.addedPhotos?.[0]?.title !== 'Archive 001') {
+    failures.push(`Expected title numbering to restart in a different album, got ${JSON.stringify(archiveUpload.addedPhotos?.[0])}.`);
+  }
+  if (continuedUpload.addedPhotos?.[0]?.title !== 'Morning Light 003') {
+    failures.push(`Expected repeated prefixes to continue within the same album, got ${JSON.stringify(continuedUpload.addedPhotos?.[0])}.`);
+  }
   if (upload.addedPhotos[0]?.group !== 'family-days' || upload.addedPhotos[0]?.canReprocess !== false) {
     failures.push(`Expected uploaded public photo in family-days without an original asset, got ${JSON.stringify(upload.addedPhotos[0])}.`);
   }
@@ -177,7 +207,9 @@ try {
       failures.push(`Expected ${kind} ${width}px webp, got ${JSON.stringify(variants[kind])}.`);
     }
   }
-  if (!deleted.every((item) => item.ok) || !deleteGroup.ok) failures.push(`Expected delete photos/group ok, got ${JSON.stringify({ deleted, deleteGroup })}.`);
+  if (!deleted.every((item) => item.ok) || !deleteArchiveGroup.ok || !deleteGroup.ok) {
+    failures.push(`Expected delete photos/groups ok, got ${JSON.stringify({ deleted, deleteArchiveGroup, deleteGroup })}.`);
+  }
 
   console.log(JSON.stringify({
     ok: failures.length === 0,

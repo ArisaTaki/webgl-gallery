@@ -143,7 +143,8 @@ class ManifestGalleryStore {
     const state = await this.readState();
     const group = resolveGroup(state.groups, groupId);
     const existingSlugs = state.photos.map((photo) => photo.slug);
-    const startingPhotoCount = state.photos.length;
+    const normalizedTitlePrefix = normalizeTitlePrefix(titlePrefix);
+    const startingTitleNumber = nextTitleNumber(state.photos, group.id, normalizedTitlePrefix);
     const added = [];
     try {
       for (const [index, file] of files.entries()) {
@@ -151,7 +152,7 @@ class ManifestGalleryStore {
         const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
         const photoTitle = title && files.length === 1
           ? String(title)
-          : `${titlePrefix} ${String(startingPhotoCount + index + 1).padStart(3, '0')}`;
+          : `${normalizedTitlePrefix} ${String(startingTitleNumber + index).padStart(3, '0')}`;
         const processed = await buildPhotoDerivatives({
           inputPath: file.path,
           id: photoId,
@@ -445,7 +446,8 @@ class SqliteGalleryStore {
     const state = await this.readState();
     const group = resolveGroup(state.groups, groupId);
     const existingSlugs = state.photos.map((photo) => photo.slug);
-    const startingPhotoCount = state.photos.length;
+    const normalizedTitlePrefix = normalizeTitlePrefix(titlePrefix);
+    const startingTitleNumber = nextTitleNumber(state.photos, group.id, normalizedTitlePrefix);
     const added = [];
     const originalCoverPhotoId = group.coverPhotoId;
     try {
@@ -454,7 +456,7 @@ class SqliteGalleryStore {
         const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
         const photoTitle = title && files.length === 1
           ? String(title)
-          : `${titlePrefix} ${String(startingPhotoCount + index + 1).padStart(3, '0')}`;
+          : `${normalizedTitlePrefix} ${String(startingTitleNumber + index).padStart(3, '0')}`;
         const processed = await buildPhotoDerivatives({
           inputPath: file.path,
           id: photoId,
@@ -820,7 +822,8 @@ class PostgresGalleryStore {
     const state = await this.readState();
     const group = resolveGroup(state.groups, groupId);
     const existingSlugs = state.photos.map((photo) => photo.slug);
-    const startingPhotoCount = state.photos.length;
+    const normalizedTitlePrefix = normalizeTitlePrefix(titlePrefix);
+    const startingTitleNumber = nextTitleNumber(state.photos, group.id, normalizedTitlePrefix);
     const added = [];
     const originalCoverPhotoId = group.coverPhotoId;
     try {
@@ -829,7 +832,7 @@ class PostgresGalleryStore {
         const photoId = `photo-${Date.now()}-${index}-${slugify(stem, 'upload')}`;
         const photoTitle = title && files.length === 1
           ? String(title)
-          : `${titlePrefix} ${String(startingPhotoCount + index + 1).padStart(3, '0')}`;
+          : `${normalizedTitlePrefix} ${String(startingTitleNumber + index).padStart(3, '0')}`;
         const processed = await buildPhotoDerivatives({
           inputPath: file.path,
           id: photoId,
@@ -1061,6 +1064,21 @@ function normalizeManifestAssets(photo, id) {
 function legacyPhotoSlug(photo, index) {
   const frame = String(photo.index || index + 1).padStart(3, '0');
   return `webgl-gallery-${frame}`;
+}
+
+function normalizeTitlePrefix(value) {
+  return String(value || 'Gallery').trim() || 'Gallery';
+}
+
+function nextTitleNumber(photos, groupId, titlePrefix) {
+  const marker = `${titlePrefix} `;
+  const highest = photos.reduce((current, photo) => {
+    if (photo.groupId !== groupId || !String(photo.title || '').startsWith(marker)) return current;
+    const suffix = String(photo.title).slice(marker.length);
+    if (!/^\d+$/.test(suffix)) return current;
+    return Math.max(current, Number(suffix));
+  }, 0);
+  return highest + 1;
 }
 
 function buildGalleryPayload(state, { publicOnly, groupSlug }: any = {}) {
