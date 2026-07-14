@@ -204,6 +204,24 @@ async function screenshot(client, path) {
   await writeFile(path, Buffer.from(result.data, 'base64'));
 }
 
+async function clickAt(client, x, y) {
+  await send(client, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+  await send(client, 'Input.dispatchMouseEvent', { button: 'left', clickCount: 1, type: 'mousePressed', x, y });
+  await send(client, 'Input.dispatchMouseEvent', { button: 'left', clickCount: 1, type: 'mouseReleased', x, y });
+}
+
+async function clickElementAt(client, selector) {
+  const point = await evaluate(client, `(() => {
+    const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return { hit: hit?.tagName || '', matches: Boolean(hit?.closest(${JSON.stringify(selector)})), x, y };
+  })()`);
+  if (!point.matches) throw new Error(`Click target ${selector} is covered by ${point.hit || 'nothing'} at ${JSON.stringify(point)}.`);
+  await clickAt(client, point.x, point.y);
+}
+
 function assert(condition, message) {
   if (!condition) failures.push(message);
 }
@@ -251,7 +269,7 @@ try {
   })`);
   assert(publicBrand.about === 'IROP IMAGES' && publicBrand.title === 'Irop Images' && publicBrand.wordmark === 'irop images', `Public branding should consistently use Irop Images: ${JSON.stringify(publicBrand)}`);
 
-  await evaluate(client, `document.querySelector('[data-action="about"]').click()`);
+  await clickElementAt(client, '[data-action="about"]');
   await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "about"', 'Irop Images about page');
   await new Promise((resolve) => setTimeout(resolve, 1050));
   const aboutLayout = await evaluate(client, `(() => {
@@ -267,8 +285,16 @@ try {
   })()`);
   assert(aboutLayout.text === 'IROP IMAGES' && aboutLayout.left >= 0 && aboutLayout.right <= aboutLayout.viewport[0] && aboutLayout.bottom <= aboutLayout.viewport[1], `Irop Images About hero should fit the viewport: ${JSON.stringify(aboutLayout)}`);
   await screenshot(client, '/tmp/gallery-about-irop-images.png');
-  await evaluate(client, `document.querySelector('[data-action="close-about"]').click()`);
+  await clickElementAt(client, '[data-action="about"]');
   await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index"', 'gallery return after About check');
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  const indexAboutClose = await evaluate(client, `({
+    detailTarget: Number(document.querySelector('#webgl')?.dataset.activePlaneDetailTarget || 0),
+    mode: document.querySelector('.gallery-shell')?.dataset.mode,
+    path: location.pathname,
+    title: document.querySelector('[data-index-active-title]')?.textContent?.trim(),
+  })`);
+  assert(indexAboutClose.mode === 'index' && indexAboutClose.path === '/' && indexAboutClose.detailTarget === 0, `Closing About from an untouched home should remain on the home surface: ${JSON.stringify(indexAboutClose)}`);
 
   await evaluate(client, `(() => {
     window.__albumTitleAnimations = [];
@@ -318,17 +344,20 @@ try {
   assert(albumTitleEntry.mode === 'detail' && !albumTitleEntry.projectSwitchSeen && albumTitleEntry.switchAnimations === 0, `Opening a hovered album should run one clean title entry without a delayed project switch: ${JSON.stringify(albumTitleEntry)}`);
   assert(albumTitleEntry.lineHeight > albumTitleEntry.fontSize && albumTitleEntry.maskHeight >= albumTitleEntry.lineHeight && albumTitleEntry.topOverflow <= 0.5 && albumTitleEntry.bottomOverflow <= 0.5, `Wide album title mask should leave glyph headroom without clipping: ${JSON.stringify(albumTitleEntry)}`);
   await screenshot(client, '/tmp/gallery-album-title-entry.png');
-  await evaluate(client, `document.querySelector('[data-action="about"]').click()`);
+  await clickElementAt(client, '[data-action="about"]');
   await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "about" && location.pathname === "/about"', 'About from album detail');
-  await evaluate(client, `document.querySelector('[data-action="about"]').click()`);
+  await clickElementAt(client, '[data-action="about"]');
   await waitFor(client, 'document.querySelector(".gallery-shell")?.dataset.mode === "index" && location.pathname === "/"', 'top-right About close returns home');
+  await new Promise((resolve) => setTimeout(resolve, 120));
   const aboutClose = await evaluate(client, `({
     mode: document.querySelector('.gallery-shell')?.dataset.mode,
     path: location.pathname,
     detailMix: Number(document.querySelector('#webgl')?.dataset.activePlaneDetailMix || 0),
+    detailTarget: Number(document.querySelector('#webgl')?.dataset.activePlaneDetailTarget || 0),
+    heightDelta: Math.abs(Number(document.querySelector('#webgl')?.dataset.activePlaneHeightPx || 0) - Number(document.querySelector('#webgl')?.dataset.activePlaneTargetHeightPx || 0)),
     workMix: Number(document.querySelector('#webgl')?.dataset.activePlaneWorkMix || 0),
   })`);
-  assert(aboutClose.mode === 'index' && aboutClose.path === '/' && aboutClose.detailMix === 0 && aboutClose.workMix === 0, `Closing About from an album should return to a settled home view: ${JSON.stringify(aboutClose)}`);
+  assert(aboutClose.mode === 'index' && aboutClose.path === '/' && aboutClose.detailMix === 0 && aboutClose.detailTarget === 0 && aboutClose.heightDelta <= 0.5 && aboutClose.workMix === 0, `Closing About from an album should return to a settled home view without a collapse animation: ${JSON.stringify(aboutClose)}`);
 
   await send(client, 'Page.navigate', { url: localUrl });
   await waitFor(client, `location.href === ${JSON.stringify(localUrl)}`, 'Studio navigation');
@@ -563,6 +592,7 @@ try {
     screenshots: ['/tmp/gallery-about-irop-images.png', '/tmp/gallery-album-title-entry.png', '/tmp/studio-ui-v3-dialog.png', '/tmp/studio-upload-dialog-desktop.png', '/tmp/studio-ui-v2-desktop.png', '/tmp/studio-ui-v2-mobile.png', '/tmp/gallery-album-detail.png', '/tmp/gallery-work-preview.png'],
     albumTitleEntry,
     aboutClose,
+    indexAboutClose,
     aboutLayout,
     desktop,
     loginLayout,

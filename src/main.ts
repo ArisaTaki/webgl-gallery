@@ -2129,6 +2129,16 @@ function onPointerUp(event) {
   state.dragging = false;
   canvas.releasePointerCapture?.(event.pointerId);
 
+  if (
+    state.mode === VIEW.setup ||
+    state.mode === VIEW.studio ||
+    state.mode === VIEW.about ||
+    isInteractivePointerTarget(event.target)
+  ) {
+    state.paginationHoverIndex = -1;
+    return;
+  }
+
   if (!wasDragging || state.dragMoved < 9) {
     updatePaginationHover();
     if (state.paginationHoverIndex >= 0) {
@@ -4381,7 +4391,7 @@ function adoptWorkIndexAsActive() {
 }
 
 function setMode(mode, options: LooseRecord = {}) {
-  const { updateRoute = true } = options;
+  const { instant = false, updateRoute = true } = options;
   const previousMode = state.mode;
   if (previousMode === VIEW.work && (mode === VIEW.detail || mode === VIEW.index)) {
     adoptWorkIndexAsActive();
@@ -4398,18 +4408,22 @@ function setMode(mode, options: LooseRecord = {}) {
   let shouldPrimeWorkMotion = false;
   let preserveWorkFx = false;
   if (mode === VIEW.about && previousMode !== VIEW.about) {
-    state.aboutReturnMode =
-      previousMode && previousMode !== VIEW.loading && previousMode !== VIEW.setup && previousMode !== VIEW.studio ? previousMode : VIEW.index;
+    state.aboutReturnMode = VIEW.index;
   }
   state.mode = mode;
   state.hoverIndex = -1;
   if (previousMode !== mode) {
-    state.transition = 1;
-    galleryEls.shell?.classList.add('is-transitioning');
     window.clearTimeout(transitionTimer);
-    transitionTimer = window.setTimeout(() => {
+    if (instant) {
+      state.transition = 0;
       galleryEls.shell?.classList.remove('is-transitioning');
-    }, 860);
+    } else {
+      state.transition = 1;
+      galleryEls.shell?.classList.add('is-transitioning');
+      transitionTimer = window.setTimeout(() => {
+        galleryEls.shell?.classList.remove('is-transitioning');
+      }, 860);
+    }
   }
   if (mode === VIEW.index || mode === VIEW.loading || (mode === VIEW.detail && previousMode !== VIEW.work)) {
     galleryEls.shell?.classList.remove('is-title-mode-settled');
@@ -4505,12 +4519,28 @@ function settleIndexSurface() {
 
 function closeAbout() {
   state.aboutReturnMode = VIEW.index;
-  if (state.currentGroupSlug || routeGroupSlug()) {
-    state.albumRequestId += 1;
-    state.currentGroupSlug = '';
-    state.albumPhotos = [];
-  }
-  setMode(VIEW.index);
+  state.albumRequestId += 1;
+  state.currentGroupSlug = '';
+  state.albumPhotos = [];
+  state.hoverIndex = -1;
+  state.paginationHoverIndex = -1;
+  state.pointerActive = false;
+  state.dragging = false;
+  state.dragMoved = 0;
+  state.switchPulse = 0;
+  state.exitingProjectIndex = -1;
+  state.exitingWorkIndex = -1;
+  state.projectSwitchStartedAt = 0;
+  galleryEls.shell?.classList.remove(
+    'is-project-switching',
+    'is-title-mode-moving',
+    'is-title-mode-settled',
+    'is-work-entry',
+    'is-work-layer-exiting',
+    'is-work-media-switching',
+  );
+  goToPath('/', { replace: true });
+  setMode(VIEW.index, { instant: true, updateRoute: false });
 }
 
 function getStep() {
